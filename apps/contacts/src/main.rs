@@ -1,5 +1,6 @@
 mod dialog_dismissal;
 mod control;
+mod online_check;
 mod editor;
 mod formats;
 mod model;
@@ -14,6 +15,16 @@ fn main() -> glib::ExitCode {
     if args.iter().any(|s| s == "--help" || s == "-h") {
         println!("Usage: nyx-contacts [--section all|favorites|birthdays|duplicates|settings] [--toggle] [FILE.vcf|FILE.csv …]\n       nyx-contacts --find QUERY   (matching contacts as JSON, no window)");
         return glib::ExitCode::SUCCESS;
+    }
+    if let Some(i) = args.iter().position(|s| s == "--check-online") {
+        let cleanup = if args.get(i+1).is_some_and(|s|s=="cleanup") {
+            let Some(uid)=args.get(i+2) else { eprintln!("A diagnostic contact ID is required"); return glib::ExitCode::FAILURE; };
+            Some(uid.as_str())
+        } else { None };
+        return match online_check::run(cleanup) {
+            Ok(()) => glib::ExitCode::SUCCESS,
+            Err(error) => { eprintln!("Contacts online check: {error:#}"); glib::ExitCode::FAILURE }
+        };
     }
     if let Some(i) = args.iter().position(|s| s == "--find") {
         let query = args.get(i + 1).map(String::as_str).unwrap_or("");

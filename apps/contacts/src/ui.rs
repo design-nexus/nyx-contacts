@@ -35,7 +35,7 @@ pub struct State {
     pub showing_detail: Cell<bool>,
     pub rebuilding: Cell<bool>,
     pub editor: RefCell<Option<gtk::Window>>,
-    eds_books: RefCell<Vec<nyx_accounts::eds::AddressBook>>,
+    eds_books: RefCell<Vec<nyx_pim::contacts::AddressBook>>,
     eds_contacts: RefCell<Vec<Contact>>,
     eds_ready: Cell<bool>,
     eds_loading: Cell<bool>,
@@ -450,57 +450,22 @@ fn eds_uid(section: &str) -> Option<&str> {
     section.strip_prefix("eds:")
 }
 
-/// Microsoft accounts (GOA `ms_graph`, `exchange`) whose address books need
-/// evolution-ews's EDS backends, which plain evolution-data-server doesn't have.
-fn unsupported_accounts() -> Vec<String> {
-    let installed = |name: &str| {
-        ["/usr/lib", "/usr/lib64", "/usr/local/lib"]
-            .iter()
-            .any(|dir| std::path::Path::new(&format!("{dir}/evolution-data-server/addressbook-backends/{name}")).exists())
-    };
-    let Ok(client) = nyx_accounts::Client::connect() else { return Vec::new() };
-    client
-        .list()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|a| match a.provider_type.as_str() {
-            "ms_graph" => !installed("libebookbackendmicrosoft365.so"),
-            "exchange" => !installed("libebookbackendews.so"),
-            _ => false,
-        })
-        .map(|a| a.label().to_string())
-        .collect()
-}
+
+
 
 fn load_eds(ui: &Ui) {
-    // Said once a session, when the address books first load.
-    static TOLD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !TOLD.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        let u = ui.clone();
-        let handle = gtk::gio::spawn_blocking(unsupported_accounts);
-        glib::spawn_future_local(async move {
-            if let Ok(names) = handle.await
-                && !names.is_empty()
-            {
-                toast(
-                    &u,
-                    &format!(
-                        "{}: its contacts need the Microsoft 365 backends for Evolution Data Server (evolution-ews-backends or evolution-ews).",
-                        names.join(", ")
-                    ),
-                );
-            }
-        });
-    }
     let u = ui.clone();
-    let handle = gtk::gio::spawn_blocking(nyx_accounts::eds::list_address_books);
+    let handle = gtk::gio::spawn_blocking(|| {
+        if let Ok(registry) = nyx_pim::Registry::connect() { let _ = registry.refresh_accounts(nyx_accounts_native::Service::Contacts); }
+        nyx_pim::contacts::list_address_books()
+    });
     glib::spawn_future_local(async move {
         match handle.await {
             Ok(Ok(books)) => {
                 u.eds_ready.set(true);
                 *u.eds_books.borrow_mut() = books;
             }
-            Ok(Err(nyx_accounts::Error::Unavailable)) => {
+            Ok(Err(nyx_pim::Error::Unavailable(_))) => {
                 u.eds_ready.set(false);
                 u.eds_books.borrow_mut().clear();
             }
@@ -525,7 +490,7 @@ fn load_eds_contacts(ui: &Ui, uid: String) {
     ui.eds_loading.set(true);
     ui.eds_contacts.borrow_mut().clear();
     let u = ui.clone();
-    let handle = gtk::gio::spawn_blocking(move || nyx_accounts::eds::list_vcards(&uid));
+    let handle = gtk::gio::spawn_blocking(move || nyx_pim::contacts::list_vcards(&uid));
     glib::spawn_future_local(async move {
         let mut contacts = Vec::new();
         if let Ok(Ok(vcards)) = handle.await {

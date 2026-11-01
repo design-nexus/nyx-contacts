@@ -28,7 +28,7 @@ app_info() {
   case $1 in
     settings) ids="Settings" old_bins="settings settings-helper"; bins="nyx-settings nyx-settings-helper nyx-goa-helper" ;;
     glimpse) ids="Glimpse" bins="nyx-glimpse nyx-glimpsed nyx-glimpse-settings" deps="bubblewrap" ;;
-    contacts) ids="Contacts" defaults=true ;;
+    contacts) ids="Contacts" deps="libical" defaults=true ;;
     git) ids="Git" deps="gtksourceview5 libsecret git-lfs" ;;
     passwords) ids="Passwords" bins="nyx-passwords nyx-passwordsd nyx-passwords-settings nyx-passwords-bridge nyx-passwords-assistant" deps="libsecret librsvg zip" ;;
     store) ids="Store" bins="nyx-store nyx-store-helper" deps="pacman appstream libarchive polkit base-devel libjxl" ;;

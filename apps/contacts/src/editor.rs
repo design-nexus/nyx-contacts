@@ -229,6 +229,13 @@ fn open_inner(ui: &Ui, contact: Option<Contact>, merge_other: Option<String>) {
         e.present();
         return;
     }
+    let remote_book = ui::online_book(ui);
+    if remote_book.as_ref().is_some_and(|b| !b.writable) {
+        ui::toast(ui, "This address book is read-only or needs discovery.");
+        return;
+    }
+    let remote_snapshot = contact.as_ref().and_then(|c| ui::online_snapshot(ui, &c.id));
+    let online_saving = Rc::new(Cell::new(false));
     let is_new = contact.is_none();
     let original = contact.unwrap_or_default();
     let c = original.clone();
@@ -287,29 +294,30 @@ fn open_inner(ui: &Ui, contact: Option<Contact>, merge_other: Option<String>) {
         let u = u.clone();
         picker.open(Some(&parent), None::<&gtk::gio::Cancellable>, move |result| {
             if let Ok(file) = result
-                && let Some(path) = file.path() {
-                    let load = || -> anyhow::Result<Vec<u8>> {
-                        if path.metadata()?.len() > 10 * 1024 * 1024 {
-                            anyhow::bail!("Photos must be smaller than 10 MB.");
-                        }
-                        let bytes = std::fs::read(path)?;
-                        let t = gdk::Texture::from_bytes(&glib::Bytes::from(&bytes[..]))?;
-                        if t.width() > 8192 || t.height() > 8192 {
-                            anyhow::bail!("Photo dimensions must be at most 8192 × 8192.");
-                        }
-                        Ok(model_photo(&bytes))
-                    };
-                    match load() {
-                        Ok(bytes) => {
-                            *p.borrow_mut() = bytes.clone();
-                            let mut c = c.clone();
-                            c.photo = bytes;
-                            ui::clear(&preview);
-                            preview.append(&ui::avatar(&c, 72));
-                        }
-                        Err(e) => ui::toast(&u, &e.to_string()),
+                && let Some(path) = file.path()
+            {
+                let load = || -> anyhow::Result<Vec<u8>> {
+                    if path.metadata()?.len() > 10 * 1024 * 1024 {
+                        anyhow::bail!("Photos must be smaller than 10 MB.");
                     }
+                    let bytes = std::fs::read(path)?;
+                    let t = gdk::Texture::from_bytes(&glib::Bytes::from(&bytes[..]))?;
+                    if t.width() > 8192 || t.height() > 8192 {
+                        anyhow::bail!("Photo dimensions must be at most 8192 × 8192.");
+                    }
+                    Ok(model_photo(&bytes))
+                };
+                match load() {
+                    Ok(bytes) => {
+                        *p.borrow_mut() = bytes.clone();
+                        let mut c = c.clone();
+                        c.photo = bytes;
+                        ui::clear(&preview);
+                        preview.append(&ui::avatar(&c, 72));
+                    }
+                    Err(e) => ui::toast(&u, &e.to_string()),
                 }
+            }
         });
     });
     let entries: Vec<_> = NAMES
@@ -373,7 +381,11 @@ fn open_inner(ui: &Ui, contact: Option<Contact>, merge_other: Option<String>) {
     let d = dialog.clone();
     let asking = prompt.clone();
     let discard = dirty.clone();
+    let writing = online_saving.clone();
     dialog.connect_close_request(move |_| {
+        if writing.get() {
+            return glib::Propagation::Stop;
+        }
         if !s.get() && !discard.get() && g() != baseline {
             if !asking.replace(true) {
                 let ask = gtk::AlertDialog::builder()
@@ -422,6 +434,54 @@ fn open_inner(ui: &Ui, contact: Option<Contact>, merge_other: Option<String>) {
                     return;
                 }
             }
+        }
+        if let Some(book) = remote_book.clone() {
+            if online_saving.replace(true) {
+                return;
+            }
+            let payload = crate::formats::vcard_write(&[c.clone()]);
+            let expected = remote_snapshot.clone();
+            let id = book.uid.clone();
+            let before = crate::formats::vcard_write(&[original.clone()]);
+            let payload = match expected.as_deref() {
+                Some(raw) => match nyx_pim::contacts::merge_editor_changes(raw, &before, &payload) {
+                    Ok(payload) => payload,
+                    Err(failure) => {
+                        online_saving.set(false);
+                        error.set_text(&failure.to_string());
+                        error.set_visible(true);
+                        return;
+                    }
+                },
+                None => payload,
+            };
+            let outgoing = payload.clone();
+            let handle = gtk::gio::spawn_blocking(move || nyx_pim::contacts::save_vcard(&id, &outgoing, expected.as_deref()));
+            let u = u.clone();
+            let d = d.clone();
+            let saved = saved.clone();
+            let error = error.clone();
+            let saving = online_saving.clone();
+            glib::spawn_future_local(async move {
+                let result = handle.await;
+                saving.set(false);
+                match result {
+                    Ok(Ok(())) => {
+                        ui::online_saved(&u, &book.uid, c, payload);
+                        saved.set(true);
+                        d.close();
+                    }
+                    Ok(Err(failure)) => {
+                        error.set_text(&failure.to_string());
+                        error.set_visible(true);
+                    }
+                    Err(_) => {
+                        error.set_text("Could not save the contact. Your editor contents are retained.");
+                        error.set_visible(true);
+                    }
+                }
+            });
+            return;
         }
         let mut book = u.book.borrow().clone();
         if let Some(other) = &merge_other {
@@ -493,7 +553,9 @@ fn changes_onto(before: &Contact, after: &Contact, now: &Contact) -> Contact {
 /// transparency), so it doesn't weigh down every save. The original if it can't be read.
 fn model_photo(bytes: &[u8]) -> Vec<u8> {
     use gtk::gdk_pixbuf::{InterpType, Pixbuf};
-    let Ok(pb) = Pixbuf::from_stream(&gtk::gio::MemoryInputStream::from_bytes(&glib::Bytes::from(bytes)), None::<&gtk::gio::Cancellable>) else {
+    let Ok(pb) =
+        Pixbuf::from_stream(&gtk::gio::MemoryInputStream::from_bytes(&glib::Bytes::from(bytes)), None::<&gtk::gio::Cancellable>)
+    else {
         return bytes.to_vec();
     };
     let (w, h) = (pb.width(), pb.height());
@@ -501,10 +563,13 @@ fn model_photo(bytes: &[u8]) -> Vec<u8> {
     if scale >= 1.0 {
         return bytes.to_vec();
     }
-    let Some(small) = pb.scale_simple(((w as f64 * scale) as i32).max(1), ((h as f64 * scale) as i32).max(1), InterpType::Bilinear) else {
+    let Some(small) =
+        pb.scale_simple(((w as f64 * scale) as i32).max(1), ((h as f64 * scale) as i32).max(1), InterpType::Bilinear)
+    else {
         return bytes.to_vec();
     };
-    let encoded = if small.has_alpha() { small.save_to_bufferv("png", &[]) } else { small.save_to_bufferv("jpeg", &[("quality", "90")]) };
+    let encoded =
+        if small.has_alpha() { small.save_to_bufferv("png", &[]) } else { small.save_to_bufferv("jpeg", &[("quality", "90")]) };
     encoded.unwrap_or_else(|_| bytes.to_vec())
 }
 
@@ -619,9 +684,7 @@ pub fn settings(ui: &Ui) {
         &ui.overlay,
         &ui.window,
         nyx_ui::settings_card::Spec {
-            groups: &[
-                ("Contacts", "system-users-symbolic", "Names and sorting"),
-            ],
+            groups: &[("Contacts", "system-users-symbolic", "Names and sorting")],
             search_text: None,
             standard: Some(nyx_ui::settings_card::Standard {
                 app: "contacts",

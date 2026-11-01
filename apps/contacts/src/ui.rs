@@ -37,8 +37,11 @@ pub struct State {
     pub editor: RefCell<Option<gtk::Window>>,
     eds_books: RefCell<Vec<nyx_pim::contacts::AddressBook>>,
     eds_contacts: RefCell<Vec<Contact>>,
+    eds_vcards: RefCell<std::collections::HashMap<String, String>>,
     eds_ready: Cell<bool>,
     eds_loading: Cell<bool>,
+    eds_syncing: Cell<bool>,
+    native_watch: RefCell<Option<nyx_pim::Watch>>,
     /// Ids of contacts sharing an email or phone with another, worked out once per change
     /// to the book.
     dup_ids: RefCell<Option<std::collections::HashSet<String>>>,
@@ -190,8 +193,11 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
         editor: RefCell::new(None),
         eds_books: RefCell::new(vec![]),
         eds_contacts: RefCell::new(vec![]),
+        eds_vcards: RefCell::new(Default::default()),
         eds_ready: Cell::new(false),
         eds_loading: Cell::new(false),
+        eds_syncing: Cell::new(false),
+        native_watch: RefCell::new(None),
         dup_ids: RefCell::new(None),
     });
     UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
@@ -310,6 +316,41 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
     let s = ui.section.borrow().clone();
     navigate(&ui, &s);
     load_eds(&ui);
+    if let Ok(registry) = nyx_pim::Registry::connect() {
+        let weak = Rc::downgrade(&ui);
+        *ui.native_watch.borrow_mut() = Some(registry.watch(move || {
+            if let Some(ui) = weak.upgrade() {
+                load_eds(&ui);
+            }
+        }));
+    }
+    let weak = Rc::downgrade(&ui);
+    let fingerprint = Rc::new(RefCell::new(None::<String>));
+    let polling = Rc::new(Cell::new(false));
+    glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
+        let Some(ui) = weak.upgrade() else { return glib::ControlFlow::Break };
+        if polling.replace(true) {
+            return glib::ControlFlow::Continue;
+        }
+        let handle = gtk::gio::spawn_blocking(|| {
+            nyx_accounts_native::Client::connect()
+                .and_then(|client| client.list())
+                .and_then(|accounts| serde_json::to_string(&accounts).map_err(Into::into))
+        });
+        let previous = fingerprint.clone();
+        let busy = polling.clone();
+        glib::spawn_future_local(async move {
+            let result = handle.await;
+            busy.set(false);
+            if let Ok(Ok(current)) = result {
+                if previous.borrow().as_ref() != Some(&current) {
+                    *previous.borrow_mut() = Some(current);
+                    refresh_online(&ui);
+                }
+            }
+        });
+        glib::ControlFlow::Continue
+    });
     ui.window.present();
     if prefs::take_broken() {
         toast(&ui, "Settings could not be read. The original is kept as settings.toml.bak.");
@@ -401,7 +442,9 @@ pub fn commit(ui: &Ui, book: Book) -> bool {
 fn dup_ids(ui: &Ui) -> std::collections::HashSet<String> {
     let mut cached = ui.dup_ids.borrow_mut();
     cached
-        .get_or_insert_with(|| model::DupIndex::new(&ui.book.borrow().contacts).flagged().into_iter().map(str::to_string).collect())
+        .get_or_insert_with(|| {
+            model::DupIndex::new(&ui.book.borrow().contacts).flagged().into_iter().map(str::to_string).collect()
+        })
         .clone()
 }
 
@@ -416,10 +459,12 @@ fn merge_all(ui: &Ui) {
         toast(ui, "No contacts share an email or phone.");
         return;
     }
-    let weight = |c: &Contact| c.emails.len() + c.phones.len() + c.addresses.len() + c.websites.len() + usize::from(!c.notes.is_empty());
+    let weight =
+        |c: &Contact| c.emails.len() + c.phones.len() + c.addresses.len() + c.websites.len() + usize::from(!c.notes.is_empty());
     let mut merged = 0;
     for group in &groups {
-        let mut cards: Vec<Contact> = group.iter().filter_map(|id| before.contacts.iter().find(|c| c.id == *id).cloned()).collect();
+        let mut cards: Vec<Contact> =
+            group.iter().filter_map(|id| before.contacts.iter().find(|c| c.id == *id).cloned()).collect();
         cards.sort_by_key(|c| std::cmp::Reverse(weight(c)));
         let mut primary = cards.remove(0);
         for other in &cards {
@@ -435,9 +480,12 @@ fn merge_all(ui: &Ui) {
         toast_action(
             ui,
             &format!("Merged {merged} duplicate cards into {}.", groups.len()),
-            Some(("Undo", Box::new(move || {
-                commit(&u, before.clone());
-            }))),
+            Some((
+                "Undo",
+                Box::new(move || {
+                    commit(&u, before.clone());
+                }),
+            )),
         );
     }
 }
@@ -450,15 +498,9 @@ fn eds_uid(section: &str) -> Option<&str> {
     section.strip_prefix("eds:")
 }
 
-
-
-
 fn load_eds(ui: &Ui) {
     let u = ui.clone();
-    let handle = gtk::gio::spawn_blocking(|| {
-        if let Ok(registry) = nyx_pim::Registry::connect() { let _ = registry.refresh_accounts(nyx_accounts_native::Service::Contacts); }
-        nyx_pim::contacts::list_address_books()
-    });
+    let handle = gtk::gio::spawn_blocking(nyx_pim::contacts::list_address_books);
     glib::spawn_future_local(async move {
         match handle.await {
             Ok(Ok(books)) => {
@@ -483,6 +525,26 @@ fn load_eds(ui: &Ui) {
         }
         nav(&u);
         layout(&u);
+        if let Some(book) = online_book(&u) {
+            load_eds_contacts(&u, book.uid);
+        }
+    });
+}
+fn refresh_online(ui: &Ui) {
+    if ui.eds_syncing.replace(true) {
+        return;
+    }
+    let u = ui.clone();
+    let handle = gtk::gio::spawn_blocking(|| {
+        nyx_pim::Registry::connect().and_then(|registry| registry.refresh_accounts(nyx_accounts_native::Service::Contacts))
+    });
+    glib::spawn_future_local(async move {
+        let result = handle.await;
+        u.eds_syncing.set(false);
+        if let Ok(Err(error)) = result {
+            toast(&u, &format!("Cached contacts are available; synchronization needs attention: {error}"));
+        }
+        load_eds(&u);
     });
 }
 
@@ -490,22 +552,30 @@ fn load_eds_contacts(ui: &Ui, uid: String) {
     ui.eds_loading.set(true);
     ui.eds_contacts.borrow_mut().clear();
     let u = ui.clone();
+    let requested = uid.clone();
     let handle = gtk::gio::spawn_blocking(move || nyx_pim::contacts::list_vcards(&uid));
     glib::spawn_future_local(async move {
+        let result = handle.await;
+        if !online_book(&u).is_some_and(|book| book.uid == requested) {
+            return;
+        }
         let mut contacts = Vec::new();
-        if let Ok(Ok(vcards)) = handle.await {
+        let mut raw = std::collections::HashMap::new();
+        if let Ok(Ok(vcards)) = result {
             for card in vcards {
                 let mut imported = crate::formats::vcard_read(&card);
                 if let Some(mut c) = imported.contacts.pop() {
                     if let Some(id) = vcard_uid(&card) {
                         c.id = id;
                     }
+                    raw.insert(c.id.clone(), card.clone());
                     contacts.push(c);
                 }
             }
         }
         u.eds_loading.set(false);
         *u.eds_contacts.borrow_mut() = contacts;
+        *u.eds_vcards.borrow_mut() = raw;
         if is_remote(&u) {
             refresh(&u);
         }
@@ -671,7 +741,7 @@ pub fn refresh(ui: &Ui) {
         empty.set_margin_start(20);
         empty.set_margin_end(20);
         empty.append(&label(&empty_copy(ui), "dim"));
-        if !is_remote(ui) && ui.section.borrow().as_str() != "online" {
+        if (!is_remote(ui) || online_book(ui).is_some_and(|b| b.writable)) && ui.section.borrow().as_str() != "online" {
             let b = button("New contact", "New contact (Ctrl+N)");
             let u = ui.clone();
             b.connect_clicked(move |_| editor::open(&u, None));
@@ -743,12 +813,7 @@ fn nav(ui: &Ui) {
     let mut items = vec![
         ("all".into(), "All contacts".into(), "contact-book-symbolic", book.contacts.len()),
         ("favorites".into(), "Favorites".into(), "starred-symbolic", book.contacts.iter().filter(|c| c.favorite).count()),
-        (
-            "birthdays".into(),
-            "Birthdays".into(),
-            "x-office-calendar-symbolic",
-            crate::control::upcoming(&book, 30).len(),
-        ),
+        ("birthdays".into(), "Birthdays".into(), "x-office-calendar-symbolic", crate::control::upcoming(&book, 30).len()),
         ("duplicates".into(), "Duplicates".into(), "edit-copy-symbolic", dup_ids(ui).len()),
     ];
     for l in &book.lists {
@@ -779,7 +844,7 @@ fn nav(ui: &Ui) {
     let books = ui.eds_books.borrow().clone();
     nav_group(ui, "ONLINE", false);
     if books.is_empty() {
-        let (b, _) = nav_button("network-workgroup-symbolic", "Online books", "Contacts from connected accounts");
+        let (b, _) = nav_button("network-workgroup-symbolic", "Address books", "Account and imported address books");
         if ui.section.borrow().as_str() == "online" {
             b.add_css_class("active");
             set_page_title(ui, "Online books");
@@ -843,9 +908,10 @@ fn layout(ui: &Ui) {
     }
     fn hide(root: &gtk::Widget, compact: bool) {
         if root.has_css_class("nav-item")
-            && let Some(content) = root.downcast_ref::<gtk::Button>().and_then(|b| b.child()) {
-                content.set_halign(if compact { gtk::Align::Center } else { gtk::Align::Fill });
-            }
+            && let Some(content) = root.downcast_ref::<gtk::Button>().and_then(|b| b.child())
+        {
+            content.set_halign(if compact { gtk::Align::Center } else { gtk::Align::Fill });
+        }
         if root.has_css_class("compact-hide") {
             root.set_visible(!compact);
         }
@@ -920,7 +986,14 @@ fn details(ui: &Ui) {
     }
     let bar = w::hbox(6);
     if is_remote(ui) {
-        identity.append(&label("On this account · stays on the provider", "dim"));
+        identity.append(&label(
+            if online_book(ui).is_some_and(|book| book.backend == "native") {
+                "Stored on this device"
+            } else {
+                "On this account · changes are queued locally"
+            },
+            "dim",
+        ));
     }
     let favorite = w::icon_button(
         if c.favorite { "starred-symbolic" } else { "non-starred-symbolic" },
@@ -940,6 +1013,8 @@ fn details(ui: &Ui) {
     });
     if !is_remote(ui) {
         bar.append(&favorite);
+    }
+    if !is_remote(ui) || online_book(ui).is_some_and(|b| b.writable) {
         let edit = w::icon_button("document-edit-symbolic", "Edit contact (Enter)");
         let u = ui.clone();
         edit.connect_clicked(move |_| edit_selected(&u));
@@ -1003,7 +1078,11 @@ fn details(ui: &Ui) {
                 });
                 actions.append(&open);
             }
-            rows.append(&w::row(&glib::markup_escape_text(&shown), &glib::markup_escape_text(&f.label), Some(actions.upcast_ref())));
+            rows.append(&w::row(
+                &glib::markup_escape_text(&shown),
+                &glib::markup_escape_text(&f.label),
+                Some(actions.upcast_ref()),
+            ));
         }
     }
     let birthday = birthday_text(&c.birthday);
@@ -1039,7 +1118,11 @@ fn details(ui: &Ui) {
             let o = other.clone();
             b.connect_clicked(move |_| editor::review_merge(&u, &a, &o));
             let what = other.emails.first().or(other.phones.first()).map(|f| f.value.clone()).unwrap_or_default();
-            rows.append(&w::row(&glib::markup_escape_text(&other.name(false)), &glib::markup_escape_text(&what), Some(b.upcast_ref())));
+            rows.append(&w::row(
+                &glib::markup_escape_text(&other.name(false)),
+                &glib::markup_escape_text(&what),
+                Some(b.upcast_ref()),
+            ));
         }
         ui.details.append(&rows);
     }
@@ -1048,8 +1131,20 @@ fn details(ui: &Ui) {
 /// A birthday for reading: "12 April 1985", or "12 April" without a year. Anything
 /// Contacts doesn't read is shown as it is.
 fn birthday_text(b: &str) -> String {
-    const MONTHS: [&str; 12] =
-        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
     let Some((m, d)) = model::birthday_md(b).filter(|(m, _)| (1..=12).contains(m)) else { return b.to_string() };
     let month = MONTHS[m as usize - 1];
     match b.get(..4).filter(|_| !b.starts_with("--")) {
@@ -1059,13 +1154,14 @@ fn birthday_text(b: &str) -> String {
 }
 pub fn avatar(c: &Contact, size: i32) -> gtk::Widget {
     if !c.photo.is_empty()
-        && let Ok(t) = gdk::Texture::from_bytes(&glib::Bytes::from(&c.photo[..])) {
-            let p = gtk::Picture::for_paintable(&t);
-            p.set_size_request(size, size);
-            p.set_content_fit(gtk::ContentFit::Contain);
-            p.set_halign(gtk::Align::Start);
-            return p.upcast();
-        }
+        && let Ok(t) = gdk::Texture::from_bytes(&glib::Bytes::from(&c.photo[..]))
+    {
+        let p = gtk::Picture::for_paintable(&t);
+        p.set_size_request(size, size);
+        p.set_content_fit(gtk::ContentFit::Contain);
+        p.set_halign(gtk::Align::Start);
+        return p.upcast();
+    }
     let initials = c.name(false).split_whitespace().take(2).filter_map(|s| s.chars().next()).collect::<String>().to_uppercase();
     let l = gtk::Label::new(Some(&initials));
     l.add_css_class("contact-avatar");
@@ -1077,8 +1173,8 @@ fn find(ui: &Ui) {
     ui.search.grab_focus();
 }
 fn edit_selected(ui: &Ui) {
-    if is_remote(ui) {
-        toast(ui, "This book is on the account. Add or edit contacts in All contacts.");
+    if online_book(ui).is_some_and(|book| !book.writable) {
+        toast(ui, "This address book is read-only or needs connection discovery.");
         return;
     }
     let id = ui.selected.borrow().first().cloned();
@@ -1112,14 +1208,15 @@ pub fn toast_action(ui: &Ui, text: &str, action: ToastAction<'_>) {
     let weak = Rc::downgrade(ui);
     glib::timeout_add_local_once(std::time::Duration::from_secs(8), move || {
         if let Some(u) = weak.upgrade()
-            && u.toast_serial.get() == serial {
-                u.toast_box.set_visible(false);
-            }
+            && u.toast_serial.get() == serial
+        {
+            u.toast_box.set_visible(false);
+        }
     });
 }
 fn delete(ui: &Ui) {
     if is_remote(ui) {
-        toast(ui, "This book is on the account. Disconnect it in Settings → Online Accounts.");
+        delete_online(ui);
         return;
     }
     let ids = ui.selected.borrow().clone();
@@ -1306,4 +1403,70 @@ pub fn show_shortcuts() {
 pub fn settings() {
     let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
     super::editor::settings(&ui);
+}
+
+pub fn online_book(ui: &Ui) -> Option<nyx_pim::contacts::AddressBook> {
+    let section = ui.section.borrow();
+    let uid = eds_uid(&section)?;
+    ui.eds_books.borrow().iter().find(|book| book.uid == uid).cloned()
+}
+pub fn online_snapshot(ui: &Ui, id: &str) -> Option<String> {
+    ui.eds_vcards.borrow().get(id).cloned()
+}
+pub fn online_saved(ui: &Ui, book: &str, contact: Contact, payload: String) {
+    if online_book(ui).is_some_and(|b| b.uid == book) {
+        *ui.selected.borrow_mut() = vec![contact.id.clone()];
+        ui.showing_detail.set(true);
+        ui.eds_vcards.borrow_mut().insert(contact.id.clone(), payload);
+        let mut contacts = ui.eds_contacts.borrow_mut();
+        if let Some(previous) = contacts.iter_mut().find(|c| c.id == contact.id) {
+            *previous = contact;
+        } else {
+            contacts.push(contact);
+        }
+        drop(contacts);
+        refresh(ui);
+    }
+    sync_online(ui, book.to_owned());
+}
+fn sync_online(ui: &Ui, _book: String) {
+    refresh_online(ui);
+}
+fn delete_online(ui: &Ui) {
+    let Some(book) = online_book(ui) else { return };
+    if !book.writable {
+        toast(ui, "This address book is read-only.");
+        return;
+    }
+    let ids = ui.selected.borrow().clone();
+    if ids.is_empty() {
+        toast(ui, "Select contacts to delete.");
+        return;
+    }
+    let expected: Vec<_> = ids.iter().filter_map(|id| online_snapshot(ui, id).map(|p| (id.clone(), p))).collect();
+    if expected.len() != ids.len() {
+        toast(ui, "Refresh the book before deleting.");
+        return;
+    }
+    let prompt=gtk::AlertDialog::builder().message(format!("Delete {} contacts from this address book?",ids.len())).detail("The deletion is queued locally and will be sent to the provider when connected. Previous cards remain in local history.").buttons(["Cancel","Delete"]).cancel_button(0).default_button(0).modal(true).build();
+    let u = ui.clone();
+    prompt.choose(Some(&ui.window), None::<&gtk::gio::Cancellable>, move |choice| {
+        if choice != Ok(1) {
+            return;
+        }
+        let id = book.uid.clone();
+        let handle = gtk::gio::spawn_blocking(move || nyx_pim::contacts::delete_vcards(&id, &expected));
+        let u = u.clone();
+        glib::spawn_future_local(async move {
+            match handle.await {
+                Ok(Ok(())) => {
+                    u.selected.borrow_mut().clear();
+                    load_eds_contacts(&u, book.uid.clone());
+                    sync_online(&u, book.uid);
+                }
+                Ok(Err(error)) => toast(&u, &error.to_string()),
+                Err(_) => toast(&u, "Contact deletion stopped; refresh the address book."),
+            }
+        });
+    });
 }

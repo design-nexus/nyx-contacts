@@ -13,7 +13,7 @@ fn main() -> glib::ExitCode {
     nyx_core::app::init(nyx_core::app::App { slug: "nyx-contacts", name: "Contacts" });
     let args: Vec<_> = std::env::args().collect();
     if args.iter().any(|s| s == "--help" || s == "-h") {
-        println!("Usage: nyx-contacts [--section all|favorites|birthdays|duplicates|settings] [--toggle] [FILE.vcf|FILE.csv …]\n       nyx-contacts --find QUERY   (matching contacts as JSON, no window)");
+        println!("Usage: nyx-contacts [--section all|favorites|birthdays|duplicates|settings] [--toggle] [FILE.vcf|FILE.csv …]\n       nyx-contacts --find QUERY   (matching contacts as JSON, no window)\n       nyx-contacts --sync-online  (synchronize enabled accounts, no window)");
         return glib::ExitCode::SUCCESS;
     }
     if let Some(i) = args.iter().position(|s| s == "--check-online") {
@@ -24,6 +24,12 @@ fn main() -> glib::ExitCode {
         return match online_check::run(cleanup) {
             Ok(()) => glib::ExitCode::SUCCESS,
             Err(error) => { eprintln!("Contacts online check: {error:#}"); glib::ExitCode::FAILURE }
+        };
+    }
+    if args.iter().any(|s| s == "--sync-online") {
+        return match nyx_pim::Registry::connect().and_then(|r| r.refresh_accounts(nyx_accounts_native::Service::Contacts)) {
+            Ok(()) => { println!("Contacts synchronization completed"); glib::ExitCode::SUCCESS }
+            Err(error) => { eprintln!("Contacts synchronization: {error}"); glib::ExitCode::FAILURE }
         };
     }
     if let Some(i) = args.iter().position(|s| s == "--find") {

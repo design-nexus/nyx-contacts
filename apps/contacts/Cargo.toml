@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-nyx-core = { git = "https://github.com/design-nexus/nyx-core.git", rev = "52cba5e27a3dd5f00c780f53e423302b4b5f9c9c" }
+nyx-core = { git = "https://github.com/design-nexus/nyx-core.git", rev = "9dc196245bbf0ccc93b8bf04ac61bb476b85e4d5" }
 nyx-theme = { git = "https://github.com/design-nexus/nyx-design.git", rev = "d6400bb7d1940dcc2ab86bb86c4ef410db3b4ff4" }
 nyx-ui = { git = "https://github.com/design-nexus/nyx-design.git", rev = "d6400bb7d1940dcc2ab86bb86c4ef410db3b4ff4" }
 gtk = { version = "0.11", package = "gtk4", features = ["v4_18"] }
@@ -19,6 +19,6 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 csv = "1"
 
-nyx-pim = { git = "https://github.com/design-nexus/nyx-core.git", rev = "f972d4e21f087721c1e5b5af25acc85cf9df5e9c" }
+nyx-pim = { git = "https://github.com/design-nexus/nyx-core.git", rev = "9dc196245bbf0ccc93b8bf04ac61bb476b85e4d5" }
 
-nyx-accounts-native = { package = "nyx-accounts-service", git = "https://github.com/design-nexus/nyx-accounts.git", rev = "5a0ed8fbe022a6953aba856979478716669fa3f1" }
+nyx-accounts-native = { package = "nyx-accounts-service", git = "https://github.com/design-nexus/nyx-accounts.git", rev = "afdc1482cb910746f942556090870d3ec083dd34" }

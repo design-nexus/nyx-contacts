@@ -9,6 +9,7 @@ mod theme;
 mod transfer;
 mod ui;
 use gtk::{gio, glib, prelude::*};
+const APP_ID: &str = "io.github.design_nexus.nyx.Contacts";
 fn main() -> glib::ExitCode {
     nyx_core::app::init(nyx_core::app::App { slug: "nyx-contacts", name: "Contacts" });
     let args: Vec<_> = std::env::args().collect();
@@ -51,7 +52,7 @@ fn main() -> glib::ExitCode {
         }
     }
     let app = gtk::Application::builder()
-        .application_id("io.github.design_nexus.nyx.Contacts")
+        .application_id(std::env::var("NYX_CONTACTS_APP_ID").unwrap_or_else(|_| APP_ID.to_string()))
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
     // Nyx Assistant looks people up and adds them through this (primary instance only).

@@ -26,6 +26,7 @@ pub struct State {
     subtitle: gtk::Label,
     sidebar: gtk::Box,
     pub list_scroll: gtk::ScrolledWindow,
+    pane_line: gtk::Separator,
     detail_scroll: gtk::ScrolledWindow,
     status: gtk::Label,
     toast_box: gtk::Box,
@@ -67,14 +68,6 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
     window.add_css_class("contacts-window");
     window.set_icon_name(Some("io.github.design_nexus.nyx.Contacts"));
     window.set_titlebar(Some(&w::hbox(0)));
-    let overlay = gtk::Overlay::new();
-    let frame = w::vbox(0);
-    frame.add_css_class("window-frame");
-    let body = w::hbox(0);
-    body.set_vexpand(true);
-    frame.append(&body);
-    overlay.set_child(Some(&frame));
-    window.set_child(Some(&overlay));
     let sidebar = w::vbox(0);
     sidebar.set_hexpand(false);
     sidebar.add_css_class("settings-navigation");
@@ -107,11 +100,9 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
     status.add_css_class("compact-hide");
     foot.append(&status);
     sidebar.append(&foot);
-    body.append(&sidebar);
     let page = w::vbox(0);
     page.add_css_class("settings-content");
     page.set_hexpand(true);
-    body.append(&page);
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search contacts  (Ctrl+F)"));
     search.update_property(&[gtk::accessible::Property::Label("Search contacts")]);
@@ -135,7 +126,10 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
     header.end.append(&menu);
     header.end.append(&new);
     header.end.append(&chrome::settings_button(settings));
-    frame.prepend(&header.root);
+    let frame = nyx_ui::frame::AppFrame::new(&header.root);
+    frame.set_sidebar(&sidebar);
+    frame.set_page(&page);
+    let overlay = frame.install(&window);
     let panes = w::hbox(0);
     panes.set_vexpand(true);
     page.append(&panes);
@@ -150,6 +144,8 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
         .build();
     list_scroll.set_width_request(280);
     panes.append(&list_scroll);
+    let pane_line = nyx_ui::frame::pane_line(gtk::Orientation::Vertical);
+    panes.append(&pane_line);
     let details = w::vbox(12);
     details.add_css_class("contact-details");
     let detail_scroll = gtk::ScrolledWindow::builder()
@@ -182,6 +178,7 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
         subtitle: header.subtitle.clone(),
         sidebar,
         list_scroll,
+        pane_line,
         detail_scroll,
         status,
         toast_box,
@@ -926,6 +923,7 @@ fn layout(ui: &Ui) {
     ui.list_scroll.set_hexpand(narrow || empty);
     ui.list_scroll.set_visible(empty || !narrow || !ui.showing_detail.get());
     ui.detail_scroll.set_visible(!empty && (!narrow || ui.showing_detail.get()));
+    ui.pane_line.set_visible(ui.list_scroll.is_visible() && ui.detail_scroll.is_visible());
     if let Some(back) = ui.details.first_child() {
         back.set_visible(narrow);
     }

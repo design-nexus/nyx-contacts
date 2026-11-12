@@ -802,6 +802,9 @@ fn nav_group(ui: &Ui, title: &str, first: bool) {
     if first {
         heading.add_css_class("first");
     }
+    // The first group in the app's accent, the others from the theme's [sections.contacts].
+    let section = if first { nyx_ui::sidebar::ACCENT_SECTION.to_string() } else { title.to_lowercase() };
+    nyx_ui::sidebar::set_section(&heading, &section);
     ui.nav.append(&heading);
 }
 fn nav(ui: &Ui) {

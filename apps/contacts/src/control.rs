@@ -101,6 +101,20 @@ fn today() -> (u32, u32, i32) {
     now.map(|n| (n.month() as u32, n.day_of_month() as u32, n.year())).unwrap_or((1, 1, 1970))
 }
 
+/// Days to a birthday's next return, and the age it brings (None without a year).
+pub fn next_birthday(birthday: &str) -> Option<(i64, Option<i32>)> {
+    let md = model::birthday_md(birthday)?;
+    let t = today();
+    let n = days_until(md, t)?;
+    let next_year = if days_from_civil(t.2, md.0, md.1).zip(days_from_civil(t.2, t.0, t.1)).is_some_and(|(b, now)| b >= now) {
+        t.2
+    } else {
+        t.2 + 1
+    };
+    let born = birthday.get(..4).filter(|_| !birthday.starts_with("--")).and_then(|y| y.parse::<i32>().ok());
+    Some((n, born.map(|y| next_year - y)))
+}
+
 /// Contacts with a birthday in the next `days` days, soonest first, with how many days off.
 pub fn upcoming(book: &model::Book, days: i64) -> Vec<(i64, Contact)> {
     let t = today();

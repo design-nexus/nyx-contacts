@@ -23,21 +23,22 @@ pub fn choose_import(ui: &Ui) {
     });
 }
 pub fn import_path(ui: &Ui, path: &Path) {
+    let source = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "the file".into());
     match formats::read(path) {
         Ok((text, csv)) => {
             if csv {
                 match formats::csv_data(&text) {
-                    Ok(data) => mapping(ui, data),
+                    Ok(data) => mapping(ui, data, source.clone()),
                     Err(e) => ui::toast(ui, &format!("Could not read CSV: {e}")),
                 }
             } else {
-                preview(ui, formats::vcard_read(&text));
+                preview(ui, formats::vcard_read(&text), &source);
             }
         }
         Err(e) => ui::toast(ui, &format!("Could not import: {e}")),
     }
 }
-fn mapping(ui: &Ui, data: formats::CsvData) {
+fn mapping(ui: &Ui, data: formats::CsvData, source: String) {
     let (dialog, card) = w::dialog("Map CSV columns", 560);
     crate::dialog_dismissal::add(&dialog, &card, "Cancel");
     dialog.set_default_height(620);
@@ -71,7 +72,7 @@ fn mapping(ui: &Ui, data: formats::CsvData) {
         }
         let parsed = formats::csv_contacts(&data, &map);
         d.close();
-        preview(&u, parsed);
+        preview(&u, parsed, &source);
     });
     dialog.present();
 }
@@ -82,59 +83,168 @@ fn existing<'a>(book: &'a model::Book, c: &model::Contact) -> Option<&'a model::
     book.contacts.iter().find(|o| o.id == uid || formats::uid(o).as_deref() == Some(uid.as_str()))
 }
 
-fn preview(ui: &Ui, import: Import) {
-    let (dialog, card) = w::dialog("Import preview", 580);
-    dialog.set_default_height(600);
-    let book = ui.book.borrow();
-    let updates = import.contacts.iter().filter(|c| existing(&book, c).is_some()).count();
+/// What an imported card adds to the contact it updates.
+fn what_changes(old: &model::Contact, new: &model::Contact) -> String {
+    let adds = |a: &[model::Field], b: &[model::Field]| b.iter().any(|f| !a.iter().any(|o| o.value.eq_ignore_ascii_case(&f.value)));
+    let mut parts = vec![];
+    if adds(&old.emails, &new.emails) {
+        parts.push("adds an email");
+    }
+    if adds(&old.phones, &new.phones) {
+        parts.push("adds a phone");
+    }
+    if adds(&old.addresses, &new.addresses) {
+        parts.push("adds an address");
+    }
+    if !new.title.is_empty() && new.title != old.title {
+        parts.push("new job title");
+    }
+    if !new.company.is_empty() && new.company != old.company {
+        parts.push("new company");
+    }
+    if parts.is_empty() {
+        "no new details".into()
+    } else {
+        parts.join(", ")
+    }
+}
+
+fn preview(ui: &Ui, import: Import, source: &str) {
+    let n = import.contacts.len();
+    let title = if n == 1 { format!("Import 1 contact from {source}") } else { format!("Import {n} contacts from {source}") };
+    let (dialog, card) = w::dialog(&title, 520);
+    dialog.add_css_class("import-dialog");
+    dialog.set_default_height(560);
+    let book = ui.book.borrow().clone();
     // Duplicates among the new cards, and against the book, through one index.
     let mut all = book.contacts.clone();
     all.extend(import.contacts.iter().filter(|c| existing(&book, c).is_none()).cloned());
     let index = model::DupIndex::new(&all);
-    let flagged = index.flagged();
-    let duplicates = all[book.contacts.len()..].iter().filter(|c| flagged.contains(c.id.as_str())).count();
-    drop(book);
-    card.append(&ui::label(
-        &format!(
-            "{} contacts · {} update existing ones · {} warnings · {} possible duplicates",
-            import.contacts.len(),
-            updates,
-            import.warnings.len(),
-            duplicates
-        ),
-        "",
-    ));
-    if duplicates > 0 {
-        card.append(&ui::label("Duplicates are imported as separate cards. Review them in Duplicates after importing.", "dim"));
+    let flagged: std::collections::HashSet<String> = index.flagged().into_iter().map(str::to_string).collect();
+    let updates = import.contacts.iter().filter(|c| existing(&book, c).is_some()).count();
+    let duplicates = all[book.contacts.len()..].iter().filter(|c| flagged.contains(&c.id)).count();
+    let section = ui.section.borrow().clone();
+    let into = match book.lists.iter().find(|l| l.id == section) {
+        Some(l) => format!("Into On this computer and the {} list", l.name),
+        None => "Into On this computer".to_string(),
+    };
+    let mut summary = vec![into];
+    match updates {
+        0 => {}
+        1 => summary.push("1 updates someone you have".into()),
+        n => summary.push(format!("{n} update people you have")),
     }
-    let body = w::vbox(8);
-    card.append(&ui::scroll(&body));
+    match duplicates {
+        0 => {}
+        1 => summary.push("1 looks like a duplicate".into()),
+        n => summary.push(format!("{n} look like duplicates")),
+    }
+    let sub = ui::label(&summary.join(" · "), "dim");
+    sub.set_selectable(false);
+    card.append(&sub);
     for warning in &import.warnings {
-        body.append(&ui::label(warning, "error"));
+        card.append(&ui::label(warning, "error"));
     }
-    for c in &import.contacts {
-        body.append(&ui::label(
-            &format!("{} — {}", c.name(false), c.emails.first().map(|f| f.value.as_str()).unwrap_or(&c.company)),
-            "",
-        ));
-    }
+    let rows = w::vbox(0);
+    rows.add_css_class("field-card");
+    rows.add_css_class("import-rows");
+    let scroll = ui::scroll(&rows);
+    scroll.set_min_content_height(200);
+    card.append(&scroll);
+    let checks: std::rc::Rc<Vec<gtk::CheckButton>> = std::rc::Rc::new(
+        import
+            .contacts
+            .iter()
+            .map(|c| {
+                let row = w::hbox(12);
+                row.add_css_class("import-row");
+                let check = gtk::CheckButton::new();
+                check.add_css_class("row-check");
+                row.append(&check);
+                row.append(&ui::avatar(c, 28));
+                let text = w::vbox(1);
+                text.set_hexpand(true);
+                let name = w::label(&c.name(false), "import-name");
+                name.set_xalign(0.0);
+                text.append(&name);
+                let old = existing(&book, c);
+                let twin = (old.is_none() && flagged.contains(&c.id))
+                    .then(|| all.iter().find(|o| o.id != c.id && model::duplicates(c, o)))
+                    .flatten();
+                let line = match (old, twin) {
+                    (Some(o), _) => what_changes(o, c),
+                    (None, Some(t)) => format!("same {} as {}", model::shared(c, t).unwrap_or("details"), t.name(false)),
+                    _ => c.emails.first().or(c.phones.first()).map(|f| f.value.clone()).unwrap_or_else(|| c.company.clone()),
+                };
+                let l = w::label(&line, "import-sub");
+                l.set_xalign(0.0);
+                l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                text.append(&l);
+                row.append(&text);
+                if old.is_some() {
+                    let t = w::label("updates", "import-tag");
+                    t.set_valign(gtk::Align::Center);
+                    row.append(&t);
+                } else if twin.is_some() {
+                    let t = w::label("duplicate?", "import-tag");
+                    t.add_css_class("warn");
+                    t.set_valign(gtk::Align::Center);
+                    row.append(&t);
+                }
+                check.set_active(twin.is_none());
+                let r = row.clone();
+                check.connect_toggled(move |c| {
+                    if c.is_active() {
+                        r.remove_css_class("off")
+                    } else {
+                        r.add_css_class("off")
+                    }
+                });
+                if twin.is_some() {
+                    row.add_css_class("off");
+                }
+                rows.append(&row);
+                check
+            })
+            .collect(),
+    );
     let actions = w::hbox(8);
     actions.set_halign(gtk::Align::End);
+    actions.set_margin_top(12);
     let cancel = ui::button("Cancel", "Cancel import");
+    cancel.add_css_class("flat");
     let d = dialog.clone();
     cancel.connect_clicked(move |_| d.close());
     actions.append(&cancel);
-    let save = ui::button("Import", "Add the previewed contacts to the address book");
+    let save = ui::button("", "Add the checked contacts to the address book");
     save.add_css_class("suggested-action");
-    save.set_sensitive(!import.contacts.is_empty());
     actions.append(&save);
     card.append(&actions);
+    let count = {
+        let (checks, save) = (checks.clone(), save.clone());
+        move || {
+            let k = checks.iter().filter(|c| c.is_active()).count();
+            save.set_label(&format!("Import {k}"));
+            save.set_sensitive(k > 0);
+        }
+    };
+    count();
+    for c in checks.iter() {
+        let count = count.clone();
+        c.connect_toggled(move |_| count());
+    }
+    dialog.set_default_widget(Some(&save));
     let u = ui.clone();
     let d = dialog.clone();
     save.connect_clicked(move |_| {
         let mut book = u.book.borrow().clone();
         let section = u.section.borrow().clone();
-        for c in &import.contacts {
+        let mut added = 0;
+        for (c, check) in import.contacts.iter().zip(checks.iter()) {
+            if !check.is_active() {
+                continue;
+            }
+            added += 1;
             let mut c = c.clone();
             // A newer copy of a card already here replaces it, keeping its id and lists.
             if let Some(id) = existing(&book, &c).map(|o| o.id.clone()) {
@@ -153,13 +263,13 @@ fn preview(ui: &Ui, import: Import) {
         }
         if ui::commit(&u, book) {
             d.close();
-            ui::toast(&u, &format!("Imported {} contacts.", import.contacts.len()));
+            ui::toast(&u, &if added == 1 { "Imported 1 contact.".to_string() } else { format!("Imported {added} contacts.") });
         }
     });
     dialog.present();
+    save.grab_focus();
 }
-pub fn export(ui: &Ui, csv: bool) {
-    let contacts = ui::chosen(ui);
+pub fn export(ui: &Ui, contacts: Vec<model::Contact>, csv: bool) {
     if contacts.is_empty() {
         ui::toast(ui, "There are no contacts to export.");
         return;

@@ -1,27 +1,777 @@
-/* Contacts on Nyx 2.0: only Contacts' own parts. One surface: spacing and soft
-   fills separate the sections, the list and the card, never lines. */
-window.contacts-window .app-header button.accent-action { color: @theme_accent; }
-window.contacts-window .app-header button.accent-action:hover { background: alpha(@theme_accent, 0.14); }
-.nav-top { padding: 0 0 6px 0; }
-.nav-foot { padding: 6px 4px 0 8px; }
-.nav-foot .status-readout { color: @theme_dim_text; font-size: 11.5px; }
-.contact-list { background: @theme_bg; padding: 0 8px; }
-.contact-list row { border-radius: var(--nyx-radius-small); background: transparent; }
-.contact-list row:hover { background: @row_hover; }
-.contact-list row:selected { background: @nav_active; }
-.contact-row-name { font-weight: 500; }
-.contact-list image.accent { color: @theme_accent; }
-.contact-row-description { font-size: 0.88em; }
-.contact-details { padding: 12px 24px 36px; }
-.contact-details > .group-title { margin-top: 14px; margin-bottom: 0; }
-.contact-name { font-size: 1em; font-weight: 600; }
-.contact-heading { color: @theme_dim_text; font-size: 0.9em; font-weight: 600; letter-spacing: 2px; margin-top: 14px; }
-.contact-avatar { color: @theme_accent; background: @theme_card; border-radius: 10px; font-size: 1em; }
-.contact-input { background: @field; color: @theme_text; border: 1px solid transparent; border-radius: 6px; }
-.error { color: @theme_danger; }
+/* Contacts on the shared 2.0 base. The look follows nyx-design/mockups/contacts. */
 
-window.contacts-window .settings-navigation button.nav-add { color: @theme_dim_text; }
-.contact-empty { color: @theme_dim_text; }
-.contact-empty button { min-width: 0; }
+/* ---------- Header ---------- */
 
-.contact-list row.contact-empty-row { background: transparent; }
+.key-hint {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+window.contacts-window .app-header button.new-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+  font-weight: 600;
+}
+
+window.contacts-window .app-header button.new-button:hover {
+  background: mix(@field, @theme_text, 0.06);
+}
+
+window.contacts-window .app-header button.new-button .key-hint {
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+/* ---------- Sidebar ---------- */
+
+.settings-navigation:not(.compact) {
+  min-width: 236px;
+}
+
+.settings-navigation button.nav-item.active {
+  box-shadow: none;
+}
+
+/* Group headings come from nyx_ui::sidebar: uppercase, in their section's colour. */
+window.contacts-window .settings-navigation .nav-group-row button.nav-group-add {
+  min-height: 22px;
+  min-width: 22px;
+  padding: 0;
+  margin: 0 4px 2px 0;
+  color: @theme_text_tertiary;
+}
+
+/* The icon rail's mark where a group starts: a short bar in its colour. */
+.settings-navigation separator.nav-divider {
+  margin: 8px 14px 6px;
+  min-height: 2px;
+  border-radius: 1px;
+  background: @theme_divider;
+}
+
+.settings-navigation .nav-sub {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.settings-navigation .nav-badge {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: alpha(@theme_accent, 0.18);
+  color: @theme_accent;
+  font-size: 0.846em;
+  font-weight: 600;
+}
+
+.settings-navigation button.nav-add {
+  color: @theme_text_tertiary;
+}
+
+.nav-foot {
+  padding: 10px 4px 0 10px;
+}
+
+.nav-foot .status-readout {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.nav-foot .status-icon {
+  -gtk-icon-size: 13px;
+  color: @theme_text_tertiary;
+}
+
+.nav-foot .status-icon.ok { color: @theme_success; }
+.nav-foot .status-icon.warn { color: @theme_warning; }
+
+/* The swatches lists and initials are drawn in. */
+.list-dot {
+  border-radius: 999px;
+  margin: 0 3px;
+}
+
+.swatch-0 { background: #3d8ae8; }
+.swatch-1 { background: #8b6cf0; }
+.swatch-2 { background: #c95fc6; }
+.swatch-3 { background: #f2655f; }
+.swatch-4 { background: #f5875a; }
+.swatch-5 { background: #eeb43f; }
+.swatch-6 { background: #59d45b; }
+.swatch-7 { background: #3cc4c9; }
+
+/* ---------- The list ---------- */
+
+.list-col {
+  border-right: none;
+}
+
+.list-head {
+  min-height: 44px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid @sheet_line;
+}
+
+.list-title {
+  font-weight: 600;
+}
+
+.list-count {
+  color: @theme_text_tertiary;
+}
+
+window.contacts-window button.sort-pick {
+  min-height: 26px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+  font-size: 0.923em;
+}
+
+.contact-list {
+  background: transparent;
+  padding: 4px 8px 80px 8px;
+}
+
+.contact-list > row {
+  border-radius: 7px;
+  background: transparent;
+  padding: 0;
+}
+
+.contact-list > row.contact-row {
+  padding: 6px 8px;
+}
+
+.contact-list > row.contact-row:hover {
+  background: @row_hover;
+}
+
+.contact-list > row.contact-row:selected {
+  background: @nav_active;
+  color: @theme_text;
+}
+
+.contact-list > row.letter-row,
+.contact-list > row.letter-row:hover,
+.contact-list > row.list-empty-row {
+  background: transparent;
+}
+
+.letter {
+  margin: 10px 10px 4px 10px;
+  font-size: 0.846em;
+  font-weight: 600;
+  color: @theme_text_tertiary;
+}
+
+.contact-row-sub {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.row-star {
+  -gtk-icon-size: 14px;
+  color: @theme_warning;
+}
+
+checkbutton.row-check check {
+  min-width: 16px;
+  min-height: 16px;
+}
+
+.list-empty-row {
+  padding: 40px 16px;
+}
+
+.ro-banner {
+  margin: 10px 10px 4px 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: alpha(@theme_warning, 0.10);
+  box-shadow: inset 0 0 0 1px alpha(@theme_warning, 0.25);
+}
+
+.ro-banner > image {
+  color: @theme_warning;
+}
+
+.banner-title {
+  font-weight: 600;
+}
+
+.banner-text {
+  color: @theme_dim_text;
+  font-size: 0.923em;
+}
+
+/* The bar over the list while several people are selected. */
+.selbar {
+  padding: 6px 6px 6px 14px;
+  border-radius: 11px;
+  background: @theme_popover;
+  box-shadow: 0 8px 24px alpha(black, 0.35), inset 0 0 0 1px @hairline;
+}
+
+.selbar-count {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+window.contacts-window button.selbar-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+}
+
+window.contacts-window button.danger-text-button {
+  color: @theme_danger;
+}
+
+/* ---------- Avatars ---------- */
+
+.avatar {
+  border-radius: 999px;
+}
+
+.avatar-initials {
+  color: #ffffff;
+}
+
+/* ---------- Details ---------- */
+
+.back-bar {
+  padding: 6px 8px;
+}
+
+.contact-details {
+  padding: 28px 20px 36px 20px;
+}
+
+.detail-head {
+  margin-bottom: 4px;
+}
+
+.detail-name-line {
+  margin-top: 6px;
+}
+
+.detail-name {
+  font-family: "Inter Display", "Inter", sans-serif;
+  font-size: 1.692em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+window.contacts-window button.star-toggle {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  color: @theme_text_tertiary;
+}
+
+window.contacts-window button.star-toggle.on {
+  color: @theme_warning;
+}
+
+.detail-title {
+  color: @theme_dim_text;
+}
+
+.detail-where {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.detail-where image {
+  -gtk-icon-size: 12px;
+}
+
+.contact-actions {
+  margin: 16px 0 4px 0;
+}
+
+window.contacts-window .contact-actions > button.contact-action {
+  min-width: 66px;
+  padding: 8px 0 6px 0;
+  border-radius: 11px;
+  background: @theme_card;
+  box-shadow: inset 0 0 0 1px @hairline;
+  color: @theme_dim_text;
+  font-size: 0.846em;
+  font-weight: 400;
+}
+
+window.contacts-window button.contact-action:hover {
+  background: mix(@theme_card, @theme_text, 0.05);
+}
+
+window.contacts-window button.contact-action image {
+  -gtk-icon-size: 18px;
+  color: @theme_accent;
+}
+
+window.contacts-window button.contact-action:disabled {
+  opacity: 0.45;
+}
+
+.detail-section {
+  margin-top: 18px;
+}
+
+.section-label {
+  margin: 0 4px;
+  font-size: 0.846em;
+  font-weight: 600;
+  color: @theme_text_tertiary;
+}
+
+.field-card {
+  border-radius: 11px;
+  background: @theme_card;
+  box-shadow: inset 0 0 0 1px @hairline;
+}
+
+.field-row {
+  min-height: 34px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid @hairline;
+}
+
+.field-card > .field-row:last-child {
+  border-bottom: none;
+}
+
+.field-label {
+  color: @theme_text_tertiary;
+  font-size: 0.923em;
+}
+
+.field-link {
+  color: @theme_accent;
+}
+
+.field-under {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.field-acts {
+  opacity: 0;
+  padding-left: 10px;
+  background: @theme_card;
+  box-shadow: -10px 0 8px -2px @theme_card;
+}
+
+.field-row:hover .field-acts,
+.field-row:focus-within .field-acts {
+  opacity: 1;
+}
+
+window.contacts-window .field-acts button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin: 0;
+}
+
+window.contacts-window button.sort-pick image {
+  -gtk-icon-size: 11px;
+}
+
+.list-chips flowboxchild {
+  padding: 0;
+}
+
+window.contacts-window button.chip {
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+  font-weight: 400;
+  font-size: 0.923em;
+}
+
+window.contacts-window .list-chips button.chip {
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+}
+
+window.contacts-window button.chip.accent {
+  color: @theme_accent;
+  background: alpha(@theme_accent, 0.12);
+  box-shadow: none;
+}
+
+window.contacts-window button.chip image {
+  -gtk-icon-size: 11px;
+}
+
+.note-card {
+  padding: 12px 14px;
+}
+
+.note-text {
+  color: @theme_dim_text;
+}
+
+.detail-empty .empty-title,
+.empty-page .empty-title {
+  font-size: 1.154em;
+  font-weight: 600;
+}
+
+/* ---------- Editing in place ---------- */
+
+.contact-details.editing {
+  padding-top: 24px;
+}
+
+.edit-head {
+  margin-bottom: 4px;
+}
+
+window.contacts-window button.photo-pick {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin: 0 -2px -2px 0;
+  border-radius: 999px;
+  background: @theme_popover;
+  box-shadow: 0 2px 8px alpha(black, 0.3);
+}
+
+window.contacts-window button.photo-pick image {
+  -gtk-icon-size: 13px;
+}
+
+.edit-head entry {
+  min-height: 34px;
+}
+
+expander.more-names title {
+  color: @theme_accent;
+  font-size: 0.923em;
+}
+
+.edit-heading {
+  margin: 18px 4px 6px 4px;
+  font-size: 0.846em;
+  font-weight: 600;
+  color: @theme_text_tertiary;
+}
+
+.edit-row {
+  min-height: 34px;
+  padding: 5px 8px 5px 10px;
+  border-bottom: 1px solid @hairline;
+}
+
+window.contacts-window menubutton.label-pick > button {
+  min-width: 92px;
+  min-height: 28px;
+  padding: 0 6px 0 9px;
+  border-radius: 6px;
+  background: @field;
+  color: @theme_dim_text;
+  font-size: 0.923em;
+  font-weight: 400;
+}
+
+window.contacts-window menubutton.label-pick image {
+  -gtk-icon-size: 11px;
+}
+
+.edit-row entry {
+  min-height: 30px;
+}
+
+.edit-row .label-static {
+  min-width: 77px;
+  min-height: 28px;
+  padding: 0 6px 0 9px;
+  border-radius: 6px;
+  background: @field;
+  color: @theme_dim_text;
+  font-size: 0.923em;
+}
+
+window.contacts-window menubutton.date-pick > button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--nyx-radius-small);
+  background: @field;
+  font-weight: 400;
+}
+
+window.contacts-window button.field-remove {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  color: @theme_text_tertiary;
+}
+
+window.contacts-window button.field-add {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 0;
+  color: @theme_accent;
+  font-weight: 400;
+}
+
+window.contacts-window button.field-add image {
+  -gtk-icon-size: 14px;
+}
+
+window.contacts-window .list-chips button.chip:checked {
+  background: alpha(@theme_accent, 0.14);
+  box-shadow: inset 0 0 0 1px alpha(@theme_accent, 0.45);
+  color: @theme_text;
+}
+
+.chip-hint {
+  padding: 0 9px;
+  min-height: 24px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px @hairline;
+  color: @theme_dim_text;
+  font-size: 0.923em;
+}
+
+.avatar-empty {
+  background: @field;
+  color: @theme_text_tertiary;
+}
+
+.contact-input {
+  background: @field;
+  color: @theme_text;
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.edit-bar {
+  min-height: 52px;
+  padding: 0 16px;
+  border-top: 1px solid @sheet_line;
+}
+
+.edit-status {
+  color: @theme_text_tertiary;
+  font-size: 0.923em;
+}
+
+.edit-status.error,
+.error {
+  color: @theme_danger;
+}
+
+/* ---------- Pages of their own ---------- */
+
+.page-bar {
+  min-height: 50px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid @sheet_line;
+}
+
+.page-actions button {
+  min-height: 30px;
+}
+
+.page-title {
+  font-size: 1.077em;
+  font-weight: 600;
+}
+
+.page-sub {
+  color: @theme_text_tertiary;
+}
+
+.page-clamp {
+  padding: 28px 32px 40px 32px;
+}
+
+.month-label {
+  margin: 18px 4px 6px 4px;
+  font-size: 0.846em;
+  font-weight: 600;
+  color: @theme_text_tertiary;
+}
+
+.page-clamp > .month-label:first-child {
+  margin-top: 0;
+}
+
+.birthday-row {
+  padding: 9px 14px;
+  border-bottom: 1px solid @hairline;
+}
+
+.field-card > .birthday-row:last-child {
+  border-bottom: none;
+}
+
+.birthday-row:hover {
+  background: @row_hover;
+}
+
+.birthday-row.today {
+  background: alpha(@theme_accent, 0.10);
+}
+
+.field-card > .birthday-row:first-child {
+  border-radius: 11px 11px 0 0;
+}
+
+.field-card > .birthday-row:last-child {
+  border-radius: 0 0 11px 11px;
+}
+
+.field-card > .birthday-row:only-child {
+  border-radius: 11px;
+}
+
+.birthday-age {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.birthday-when {
+  color: @theme_dim_text;
+  font-feature-settings: "tnum";
+}
+
+.birthday-row.today .birthday-when {
+  color: @theme_accent;
+  font-weight: 600;
+}
+
+window.contacts-window button.bar-action {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+}
+
+window.contacts-window button.small-button {
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: @field;
+  box-shadow: inset 0 0 0 1px @hairline;
+  font-size: 0.923em;
+}
+
+.dup-grid {
+  border-radius: 11px;
+  background: @theme_card;
+  box-shadow: inset 0 0 0 1px @hairline;
+}
+
+.dup-cell {
+  min-height: 24px;
+  padding: 10px 12px;
+  border-top: 1px solid @hairline;
+}
+
+.dup-cell.dup-head {
+  border-top: none;
+  background: alpha(@theme_text, 0.02);
+}
+
+.dup-key {
+  min-width: 86px;
+  color: @theme_text_tertiary;
+  font-size: 0.923em;
+}
+
+.dup-name {
+  font-weight: 600;
+}
+
+.dup-where {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.dup-kept {
+  margin-left: 8px;
+  color: @theme_success;
+  font-size: 0.846em;
+}
+
+.dup-none,
+checkbutton.pick.none label {
+  color: @theme_text_tertiary;
+}
+
+.dup-foot {
+  margin-top: 12px;
+  color: @theme_text_tertiary;
+}
+
+.empty-page .dim,
+.detail-empty .dim {
+  color: @theme_dim_text;
+}
+
+/* ---------- Import ---------- */
+
+.import-rows {
+  margin-top: 14px;
+}
+
+.import-row {
+  padding: 8px 14px;
+  border-bottom: 1px solid @hairline;
+}
+
+.import-rows > .import-row:last-child {
+  border-bottom: none;
+}
+
+.import-row.off {
+  opacity: 0.5;
+}
+
+.import-sub {
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.import-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: @theme_accent;
+  background: alpha(@theme_accent, 0.12);
+  font-size: 0.846em;
+}
+
+.import-tag.warn {
+  color: @theme_warning;
+  background: alpha(@theme_warning, 0.14);
+}
+
+/* ---------- Menus ---------- */
+
+.menu-icon {
+  color: @theme_dim_text;
+}
+
+.menu-note {
+  margin: 0 10px 6px 34px;
+  color: @theme_text_tertiary;
+  font-size: 0.846em;
+}
+
+.danger-text {
+  color: @theme_danger;
+}

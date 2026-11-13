@@ -340,6 +340,15 @@ fn email_key(s: &str) -> Option<String> {
     let e = s.trim().to_lowercase();
     (!e.is_empty()).then_some(e)
 }
+/// What two contacts share, for Duplicates: "phone number" or "email", or None.
+pub fn shared(a: &Contact, b: &Contact) -> Option<&'static str> {
+    let keys = |c: &Contact| c.phones.iter().filter_map(|f| phone_key(&f.value)).collect::<HashSet<_>>();
+    if !keys(a).is_disjoint(&keys(b)) {
+        return Some("phone number");
+    }
+    let mails = |c: &Contact| c.emails.iter().filter_map(|f| email_key(&f.value)).collect::<HashSet<_>>();
+    (!mails(a).is_disjoint(&mails(b))).then_some("email")
+}
 pub fn duplicates(a: &Contact, b: &Contact) -> bool {
     a.emails
         .iter()

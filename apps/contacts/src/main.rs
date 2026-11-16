@@ -50,7 +50,7 @@ fn main() -> glib::ExitCode {
     }
     if std::env::var_os("GSK_RENDERER").is_none() {
         unsafe {
-            std::env::set_var("GSK_RENDERER", "ngl");
+            std::env::set_var("GSK_RENDERER", "gl");
         }
     }
     let app = gtk::Application::builder()

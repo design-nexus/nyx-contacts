@@ -28,8 +28,8 @@ entry. To remove it, run the same line with `uninstall.sh` in place of `install.
   digits, so `+1 555-123-4567` and `555-123-4567` match). Review a merge field by field, or
   merge every exact group at once from the toolbar menu (with Undo). Merges keep every
   distinct email, phone, address, website, note and list.
-- **Online books:** contacts from Online Accounts address books (through Evolution Data
-  Server), read-only.
+- **Online books:** contacts from Online Accounts address books (through Nyx
+  Online Accounts), read-only.
 - **Import:** vCard 2.1, 3.0 and 4.0 (including quoted-printable and the labels Google and
   Apple write) and CSV with a column mapping screen, in UTF-8, UTF-16 or Windows-1252. A
   card carrying the UID of one already here updates it instead of adding a copy.

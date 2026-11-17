@@ -58,7 +58,7 @@ pub struct State {
     /// How many contacts the list shows.
     shown: Cell<usize>,
     pub editing: RefCell<Option<editor::Editing>>,
-    eds_books: RefCell<Vec<nyx_pim::contacts::AddressBook>>,
+    online_books: RefCell<Vec<nyx_pim::contacts::AddressBook>>,
     /// The book's own name, for books you renamed (`prefs.source_names`), by book id.
     book_names: RefCell<HashMap<String, String>>,
     /// Each account book's cards, and their vCards as stored, by book.
@@ -69,8 +69,8 @@ pub struct State {
     people: RefCell<Option<Vec<Person>>>,
     /// The copy being edited or deleted, when it isn't the page's own (a person in All).
     pub target: RefCell<Option<Origin>>,
-    eds_ready: Cell<bool>,
-    eds_syncing: Cell<bool>,
+    online_ready: Cell<bool>,
+    online_syncing: Cell<bool>,
     sync_error: RefCell<Option<String>>,
     native_watch: RefCell<Option<nyx_pim::Watch>>,
     /// Pairs of local contacts sharing an email or phone, worked out once per change to
@@ -345,14 +345,14 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
         rebuilding: Cell::new(false),
         shown: Cell::new(0),
         editing: RefCell::new(None),
-        eds_books: RefCell::new(vec![]),
+        online_books: RefCell::new(vec![]),
         book_names: RefCell::new(HashMap::new()),
         cards: RefCell::new(HashMap::new()),
         loading: RefCell::new(HashSet::new()),
         people: RefCell::new(None),
         target: RefCell::new(None),
-        eds_ready: Cell::new(false),
-        eds_syncing: Cell::new(false),
+        online_ready: Cell::new(false),
+        online_syncing: Cell::new(false),
         sync_error: RefCell::new(None),
         native_watch: RefCell::new(None),
         dup_pairs: RefCell::new(None),
@@ -565,7 +565,7 @@ fn snapshot(ui: &Ui, app: &gtk::Application, path: std::path::PathBuf) {
         if let Some(s) = var("SECTION") {
             let id = {
                 let book = u.book.borrow();
-                let books = u.eds_books.borrow();
+                let books = u.online_books.borrow();
                 book.lists
                     .iter()
                     .find(|l| l.name == s)
@@ -793,7 +793,7 @@ pub fn is_remote(ui: &Ui) -> bool {
     ui.section.borrow().starts_with("eds:")
 }
 
-fn eds_uid(section: &str) -> Option<&str> {
+fn online_uid(section: &str) -> Option<&str> {
     section.strip_prefix("eds:")
 }
 
@@ -803,7 +803,7 @@ fn load_eds(ui: &Ui) {
     glib::spawn_future_local(async move {
         match handle.await {
             Ok(Ok(mut books)) => {
-                u.eds_ready.set(true);
+                u.online_ready.set(true);
                 let names = prefs::get().source_names;
                 for b in &mut books {
                     if let Some(name) = names.get(&b.uid) {
@@ -811,25 +811,25 @@ fn load_eds(ui: &Ui) {
                         b.name = name.clone();
                     }
                 }
-                *u.eds_books.borrow_mut() = books;
+                *u.online_books.borrow_mut() = books;
             }
             Ok(Err(nyx_pim::Error::Unavailable(_))) => {
-                u.eds_ready.set(false);
-                u.eds_books.borrow_mut().clear();
+                u.online_ready.set(false);
+                u.online_books.borrow_mut().clear();
             }
             _ => {
-                u.eds_ready.set(false);
+                u.online_ready.set(false);
             }
         }
         let section = u.section.borrow().clone();
-        if let Some(uid) = eds_uid(&section)
-            && !u.eds_books.borrow().iter().any(|b| b.uid == uid)
+        if let Some(uid) = online_uid(&section)
+            && !u.online_books.borrow().iter().any(|b| b.uid == uid)
         {
             drop(section);
             go(&u, "all");
             return;
         }
-        let known: HashSet<String> = u.eds_books.borrow().iter().map(|b| b.uid.clone()).collect();
+        let known: HashSet<String> = u.online_books.borrow().iter().map(|b| b.uid.clone()).collect();
         u.cards.borrow_mut().retain(|uid, _| known.contains(uid));
         u.people.borrow_mut().take();
         nav(&u);
@@ -841,7 +841,7 @@ fn load_eds(ui: &Ui) {
     });
 }
 fn refresh_online(ui: &Ui) {
-    if ui.eds_syncing.replace(true) {
+    if ui.online_syncing.replace(true) {
         return;
     }
     nav(ui);
@@ -852,7 +852,7 @@ fn refresh_online(ui: &Ui) {
     });
     glib::spawn_future_local(async move {
         let result = handle.await;
-        u.eds_syncing.set(false);
+        u.online_syncing.set(false);
         match result {
             Ok(Err(error)) => {
                 *u.sync_error.borrow_mut() = Some(error.to_string());
@@ -899,7 +899,7 @@ fn load_book(ui: &Ui, uid: String) {
         u.cards.borrow_mut().insert(requested.clone(), cards);
         u.people.borrow_mut().take();
         let section = u.section.borrow().clone();
-        if matches!(section.as_str(), "all" | "favorites" | "birthdays") || eds_uid(&section) == Some(requested.as_str()) {
+        if matches!(section.as_str(), "all" | "favorites" | "birthdays") || online_uid(&section) == Some(requested.as_str()) {
             refresh(&u);
         } else {
             nav(&u);
@@ -919,7 +919,7 @@ fn hidden(key: &str) -> bool {
 
 /// The account books Contacts shows.
 fn shown_books(ui: &Ui) -> Vec<nyx_pim::contacts::AddressBook> {
-    ui.eds_books.borrow().iter().filter(|b| !hidden(&b.uid)).cloned().collect()
+    ui.online_books.borrow().iter().filter(|b| !hidden(&b.uid)).cloned().collect()
 }
 
 /// Everyone in the shown sources, once: this computer first, then the books you can
@@ -956,7 +956,7 @@ fn origin_name(ui: &Ui, origin: &Origin) -> (String, bool) {
     match origin {
         Origin::Local => ("On this computer".into(), true),
         Origin::Book(uid) => ui
-            .eds_books
+            .online_books
             .borrow()
             .iter()
             .find(|b| b.uid == *uid)
@@ -987,7 +987,7 @@ fn vcard_uid(text: &str) -> Option<String> {
 }
 
 fn lookup(ui: &Ui, id: &str) -> Option<Contact> {
-    if let Some(uid) = eds_uid(&ui.section.borrow()) {
+    if let Some(uid) = online_uid(&ui.section.borrow()) {
         book_cards(ui, uid).into_iter().find(|c| c.id == id)
     } else if people_page(ui) {
         person(ui, id).map(|p| p.contact)
@@ -1040,17 +1040,17 @@ pub fn navigate(ui: &Ui, section: &str) {
     leave_editor(ui, move || go(&u, &target));
 }
 fn go(ui: &Ui, section: &str) {
-    let eds_ok = eds_uid(section).is_some_and(|uid| ui.eds_books.borrow().iter().any(|b| b.uid == uid));
+    let online_ok = online_uid(section).is_some_and(|uid| ui.online_books.borrow().iter().any(|b| b.uid == uid));
     let valid = matches!(section, "all" | "local" | "favorites" | "birthdays" | "duplicates" | "online")
         || ui.book.borrow().lists.iter().any(|l| l.id == section)
-        || eds_ok;
+        || online_ok;
     *ui.section.borrow_mut() = if valid { section.into() } else { "all".into() };
     ui.selected.borrow_mut().clear();
     ui.showing_detail.set(false);
     if !is_remote(ui) {
         prefs::update(|p| p.last_section = ui.section.borrow().clone());
     }
-    let book = eds_uid(&ui.section.borrow()).map(str::to_string);
+    let book = online_uid(&ui.section.borrow()).map(str::to_string);
     if let Some(uid) = book
         && !ui.cards.borrow().contains_key(&uid)
     {
@@ -1070,7 +1070,7 @@ pub fn visible(ui: &Ui) -> Vec<Contact> {
     if matches!(section.as_str(), "online" | "birthdays" | "duplicates") {
         return vec![];
     }
-    let mut result: Vec<Contact> = if let Some(uid) = eds_uid(section.as_str()) {
+    let mut result: Vec<Contact> = if let Some(uid) = online_uid(section.as_str()) {
         book_cards(ui, uid).into_iter().filter(|c| c.matches(&query)).collect()
     } else if matches!(section.as_str(), "all" | "favorites") {
         let favorites = section.as_str() == "favorites";
@@ -1322,11 +1322,11 @@ fn update_selbar(ui: &Ui) {
 }
 
 fn update_status(ui: &Ui) {
-    let (icon, text, class) = if ui.eds_syncing.get() {
+    let (icon, text, class) = if ui.online_syncing.get() {
         ("emblem-synchronizing-symbolic", "Syncing accounts…".to_string(), "")
     } else if ui.sync_error.borrow().is_some() {
         ("dialog-warning-symbolic", "Sync needs attention".to_string(), "warn")
-    } else if !ui.eds_books.borrow().is_empty() {
+    } else if !ui.online_books.borrow().is_empty() {
         ("emblem-ok-symbolic", "All accounts up to date".to_string(), "ok")
     } else {
         ("drive-harddisk-symbolic", "Kept on this computer".to_string(), "")
@@ -1494,14 +1494,14 @@ fn nav(ui: &Ui) {
         let id = format!("eds:{}", book.uid);
         let (lead, end) = if !book.writable {
             ("system-lock-screen-symbolic", End::Sub("read only".into()))
-        } else if ui.eds_syncing.get() {
+        } else if ui.online_syncing.get() {
             ("weather-overcast-symbolic", End::Sub("syncing…".into()))
         } else {
             ("weather-overcast-symbolic", End::Count(book_cards(ui, &book.uid).len()))
         };
         nav_item(ui, icon(lead), book.label(), end, &id);
     }
-    if ui.eds_books.borrow().is_empty() {
+    if ui.online_books.borrow().is_empty() {
         let b = nav_item(ui, icon("list-add-symbolic"), "Add an account", End::None, "online");
         b.add_css_class("nav-add");
     }
@@ -2184,7 +2184,7 @@ fn list_entries(ui: &Ui, section: &str) -> Vec<menu::Entry> {
         let u = ui.clone();
         entries.push(menu::separator());
         entries.push(menu::item("view-refresh-symbolic", "Sync now", move || refresh_online(&u)));
-        if let Some(uid) = eds_uid(section) {
+        if let Some(uid) = online_uid(section) {
             let (u, uid) = (ui.clone(), uid.to_string());
             entries.push(menu::item("document-edit-symbolic", "Rename…", move || rename_source(&u, &uid, |_| {})));
         }
@@ -2357,7 +2357,7 @@ fn empty_page(ui: &Ui) {
         ("online", ..) => (
             "weather-overcast-symbolic",
             "No accounts yet".to_string(),
-            if ui.eds_ready.get() {
+            if ui.online_ready.get() {
                 "Connect an account in Settings → Online Accounts to see its contacts here."
             } else {
                 "Install evolution-data-server to see the contacts in your online accounts."
@@ -2986,7 +2986,7 @@ pub fn source_rows(ui: &Ui) -> Vec<SourceRow> {
         desc: count(ui.book.borrow().contacts.len()),
         removable: false,
     }];
-    for b in ui.eds_books.borrow().iter() {
+    for b in ui.online_books.borrow().iter() {
         let n = ui.cards.borrow().get(&b.uid).map(|c| c.contacts.len());
         let imported = b.uid.starts_with("import:") || b.uid.starts_with("detached:");
         let mut desc = n.map(count).unwrap_or_else(|| "Not read yet".into());
@@ -3017,7 +3017,7 @@ pub fn set_source_shown(ui: &Ui, key: &str, shown: bool) {
         load_book(ui, key.to_string());
     }
     let section = ui.section.borrow().clone();
-    if (key == "local" && section == "local") || eds_uid(&section) == Some(key) {
+    if (key == "local" && section == "local") || online_uid(&section) == Some(key) {
         go(ui, "all");
     } else {
         refresh(ui);
@@ -3027,7 +3027,7 @@ pub fn set_source_shown(ui: &Ui, key: &str, shown: bool) {
 /// Asks for a new name for the account book `uid` ("ken@example.com" to "Gmail"); `done`
 /// gets the name it shows now. The extra button goes back to the book's own name.
 pub fn rename_source(ui: &Ui, uid: &str, done: impl Fn(String) + 'static) {
-    let Some(book) = ui.eds_books.borrow().iter().find(|b| b.uid == uid).cloned() else { return };
+    let Some(book) = ui.online_books.borrow().iter().find(|b| b.uid == uid).cloned() else { return };
     let own = ui.book_names.borrow().get(uid).cloned();
     let done = Rc::new(done);
     let set = {
@@ -3042,7 +3042,7 @@ pub fn rename_source(ui: &Ui, uid: &str, done: impl Fn(String) + 'static) {
                     p.source_names.remove(&uid);
                 }
             });
-            if let Some(b) = u.eds_books.borrow_mut().iter_mut().find(|b| b.uid == uid) {
+            if let Some(b) = u.online_books.borrow_mut().iter_mut().find(|b| b.uid == uid) {
                 if name.is_some() {
                     u.book_names.borrow_mut().entry(uid.clone()).or_insert_with(|| b.name.clone());
                 } else {
@@ -3052,7 +3052,7 @@ pub fn rename_source(ui: &Ui, uid: &str, done: impl Fn(String) + 'static) {
             }
             u.people.borrow_mut().take();
             refresh(&u);
-            let label = u.eds_books.borrow().iter().find(|b| b.uid == uid).map(|b| b.label().to_string()).unwrap_or_default();
+            let label = u.online_books.borrow().iter().find(|b| b.uid == uid).map(|b| b.label().to_string()).unwrap_or_default();
             done(label);
         }
     };
@@ -3083,7 +3083,7 @@ pub fn rename_source(ui: &Ui, uid: &str, done: impl Fn(String) + 'static) {
 
 /// Removes a leftover imported book (one with no account) and its cards, after asking.
 pub fn remove_source(ui: &Ui, uid: &str, done: impl Fn() + 'static) {
-    let Some(book) = ui.eds_books.borrow().iter().find(|b| b.uid == uid).cloned() else { return };
+    let Some(book) = ui.online_books.borrow().iter().find(|b| b.uid == uid).cloned() else { return };
     let n = ui.cards.borrow().get(uid).map(|c| c.contacts.len()).unwrap_or(0);
     let prompt = gtk::AlertDialog::builder()
         .message(format!("Remove {}?", book.label()))
@@ -3109,7 +3109,7 @@ pub fn remove_source(ui: &Ui, uid: &str, done: impl Fn() + 'static) {
                 Ok(Ok(())) => {
                     u.cards.borrow_mut().remove(&uid);
                     prefs::update(|p| p.hidden_sources.retain(|h| *h != uid));
-                    if eds_uid(&u.section.borrow()) == Some(uid.as_str()) {
+                    if online_uid(&u.section.borrow()) == Some(uid.as_str()) {
                         go(&u, "all");
                     }
                     load_eds(&u);
@@ -3160,9 +3160,9 @@ pub fn online_book(ui: &Ui) -> Option<nyx_pim::contacts::AddressBook> {
     let uid = match ui.target.borrow().as_ref() {
         Some(Origin::Local) => return None,
         Some(Origin::Book(uid)) => uid.clone(),
-        None => eds_uid(&ui.section.borrow())?.to_string(),
+        None => online_uid(&ui.section.borrow())?.to_string(),
     };
-    ui.eds_books.borrow().iter().find(|book| book.uid == uid).cloned()
+    ui.online_books.borrow().iter().find(|book| book.uid == uid).cloned()
 }
 pub fn online_snapshot(ui: &Ui, id: &str) -> Option<String> {
     let book = online_book(ui)?;
@@ -3180,7 +3180,7 @@ pub fn online_saved(ui: &Ui, book: &str, contact: Contact, payload: String) {
         }
     }
     ui.people.borrow_mut().take();
-    if eds_uid(&ui.section.borrow()) == Some(book) {
+    if online_uid(&ui.section.borrow()) == Some(book) {
         *ui.selected.borrow_mut() = vec![contact.id.clone()];
         ui.showing_detail.set(true);
     }

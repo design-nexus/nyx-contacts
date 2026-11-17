@@ -19,6 +19,6 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 csv = "1"
 
-nyx-pim = { git = "https://github.com/design-nexus/nyx-core.git", rev = "a258c315f056ac649586fdb55e98613056221411" }
+nyx-pim = { git = "https://github.com/design-nexus/nyx-core.git", rev = "07e4b029c70a1f359fa68e8cca30308dd582c090" }
 
-nyx-accounts-native = { package = "nyx-accounts-service", git = "https://github.com/design-nexus/nyx-accounts.git", rev = "afdc1482cb910746f942556090870d3ec083dd34" }
+nyx-accounts-native = { package = "nyx-accounts-service", git = "https://github.com/design-nexus/nyx-accounts.git", rev = "446c48debeeb2b6f0d6a81240b3bbe34e88fe3c5" }

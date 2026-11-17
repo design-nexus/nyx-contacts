@@ -379,7 +379,10 @@ pub fn present(app: &gtk::Application, section: Option<&str>) -> anyhow::Result<
         };
         let sort_last = prefs::get().sort_last;
         let mark = |on: bool| if on { "object-select-symbolic" } else { "" };
-        menu::below(b, vec![menu::item(mark(!sort_last), "First name", by(false)), menu::item(mark(sort_last), "Last name", by(true))]);
+        menu::below(
+            b,
+            vec![menu::item(mark(!sort_last), "First name", by(false)), menu::item(mark(sort_last), "Last name", by(true))],
+        );
     });
     let u = ui.clone();
     list_menu.connect_clicked(move |b| menu::below(b, list_entries(&u, &u.section.borrow().clone())));
@@ -1072,11 +1075,7 @@ pub fn visible(ui: &Ui) -> Vec<Contact> {
     } else if matches!(section.as_str(), "all" | "favorites") {
         let favorites = section.as_str() == "favorites";
         drop(book);
-        everyone(ui)
-            .into_iter()
-            .map(|p| p.contact)
-            .filter(|c| (!favorites || c.favorite) && c.matches(&query))
-            .collect()
+        everyone(ui).into_iter().map(|p| p.contact).filter(|c| (!favorites || c.favorite) && c.matches(&query)).collect()
     } else {
         book.contacts
             .iter()
@@ -1472,7 +1471,8 @@ fn nav(ui: &Ui) {
     let (all, favorites, birthdays) = (
         everyone.len(),
         everyone.iter().filter(|p| p.contact.favorite).count(),
-        crate::control::upcoming(&Book { contacts: everyone.iter().map(|p| p.contact.clone()).collect(), lists: vec![] }, 30).len(),
+        crate::control::upcoming(&Book { contacts: everyone.iter().map(|p| p.contact.clone()).collect(), lists: vec![] }, 30)
+            .len(),
     );
     let (local, lists) = {
         let book = ui.book.borrow();
@@ -1642,9 +1642,7 @@ thread_local! {
 /// without a messaging one.
 pub fn can_open(scheme: &str) -> bool {
     HANDLERS.with(|h| {
-        *h.borrow_mut()
-            .entry(scheme.to_string())
-            .or_insert_with(|| gtk::gio::AppInfo::default_for_uri_scheme(scheme).is_some())
+        *h.borrow_mut().entry(scheme.to_string()).or_insert_with(|| gtk::gio::AppInfo::default_for_uri_scheme(scheme).is_some())
     })
 }
 
@@ -1778,7 +1776,13 @@ pub fn details(ui: &Ui) {
                 names
             })
             .unwrap_or_default();
-        let icon = if local { "drive-harddisk-symbolic" } else if writable { "weather-overcast-symbolic" } else { "system-lock-screen-symbolic" };
+        let icon = if local {
+            "drive-harddisk-symbolic"
+        } else if writable {
+            "weather-overcast-symbolic"
+        } else {
+            "system-lock-screen-symbolic"
+        };
         (icon, names.join(" · ") + if writable { "" } else { " · read only" })
     } else {
         match &book {
@@ -1860,7 +1864,10 @@ pub fn details(ui: &Ui) {
                 &f.value,
                 "",
                 true,
-                acts_for(vec![copy_act(ui, f.value.clone())], can_open("mailto").then(|| uri_act(ui, "nyx-contacts-mail-symbolic", "Write an email", mailto(&f.value)))),
+                acts_for(
+                    vec![copy_act(ui, f.value.clone())],
+                    can_open("mailto").then(|| uri_act(ui, "nyx-contacts-mail-symbolic", "Write an email", mailto(&f.value))),
+                ),
             ));
         }
         section(&ui.details, None).append(&k);
@@ -1874,7 +1881,10 @@ pub fn details(ui: &Ui) {
                 "",
                 false,
                 acts_for(
-                    acts_for(vec![copy_act(ui, f.value.clone())], can_open("tel").then(|| uri_act(ui, "call-start-symbolic", "Call", tel(&f.value, "tel")))),
+                    acts_for(
+                        vec![copy_act(ui, f.value.clone())],
+                        can_open("tel").then(|| uri_act(ui, "call-start-symbolic", "Call", tel(&f.value, "tel"))),
+                    ),
                     can_open("sms").then(|| uri_act(ui, "chat-symbolic", "Send a text message", tel(&f.value, "sms"))),
                 ),
             ));
@@ -1885,11 +1895,14 @@ pub fn details(ui: &Ui) {
         let k = card();
         for f in &c.addresses {
             let a = model::Address::parse(&f.value);
-            let locality = [a.city.as_str(), &[a.region.as_str(), &a.postal].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ")]
-                .into_iter()
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let locality = [
+                a.city.as_str(),
+                &[a.region.as_str(), &a.postal].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" "),
+            ]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
             let main = [a.po_box.as_str(), &a.extended, &a.street, &locality]
                 .into_iter()
                 .filter(|s| !s.trim().is_empty())
@@ -1905,7 +1918,14 @@ pub fn details(ui: &Ui) {
                 false,
                 acts_for(
                     vec![copy_act(ui, shown.clone())],
-                    can_open("https").then(|| uri_act(ui, "mark-location-symbolic", "Show on a map", format!("https://www.openstreetmap.org/search?query={q}"))),
+                    can_open("https").then(|| {
+                        uri_act(
+                            ui,
+                            "mark-location-symbolic",
+                            "Show on a map",
+                            format!("https://www.openstreetmap.org/search?query={q}"),
+                        )
+                    }),
                 ),
             ));
         }
@@ -1922,7 +1942,11 @@ pub fn details(ui: &Ui) {
                 &f.value,
                 "",
                 true,
-                acts_for(vec![copy_act(ui, f.value.clone())], can_open("https").then(|| uri_act(ui, "nyx-contacts-external-symbolic", "Open in the browser", web(&f.value)))),
+                acts_for(
+                    vec![copy_act(ui, f.value.clone())],
+                    can_open("https")
+                        .then(|| uri_act(ui, "nyx-contacts-external-symbolic", "Open in the browser", web(&f.value))),
+                ),
             ));
         }
         section(&ui.details, None).append(&k);
@@ -1935,14 +1959,8 @@ pub fn details(ui: &Ui) {
         chips.set_row_spacing(6);
         chips.set_column_spacing(6);
         chips.add_css_class("list-chips");
-        let lists: Vec<(String, String)> = ui
-            .book
-            .borrow()
-            .lists
-            .iter()
-            .filter(|l| l.members.contains(&c.id))
-            .map(|l| (l.id.clone(), l.name.clone()))
-            .collect();
+        let lists: Vec<(String, String)> =
+            ui.book.borrow().lists.iter().filter(|l| l.members.contains(&c.id)).map(|l| (l.id.clone(), l.name.clone())).collect();
         for (id, name) in lists {
             let b = gtk::Button::with_label(&name);
             b.add_css_class("chip");
@@ -2037,8 +2055,7 @@ pub fn avatar(c: &Contact, size: i32) -> gtk::Widget {
     } else {
         (c.first.clone(), c.last.clone())
     };
-    let initials: String =
-        [first.chars().next(), last.chars().next()].into_iter().flatten().collect::<String>().to_uppercase();
+    let initials: String = [first.chars().next(), last.chars().next()].into_iter().flatten().collect::<String>().to_uppercase();
     let hue = format!("{first}{last}").encode_utf16().map(usize::from).sum::<usize>() % SWATCHES.len();
     frame.add_css_class(&format!("swatch-{hue}"));
     let l = gtk::Label::new(Some(&initials));
@@ -2351,7 +2368,11 @@ fn empty_page(ui: &Ui) {
         ),
         (_, _, Some(b)) => (
             "weather-overcast-symbolic",
-            if ui.loading.borrow().contains(&b.uid) { "Looking for contacts…".to_string() } else { format!("No one in {} yet", b.label()) },
+            if ui.loading.borrow().contains(&b.uid) {
+                "Looking for contacts…".to_string()
+            } else {
+                format!("No one in {} yet", b.label())
+            },
             "Contacts added to this account show here. This computer's own contacts are under On this computer.".to_string(),
             b.writable && !ui.loading.borrow().contains(&b.uid),
             false,
@@ -2419,8 +2440,11 @@ fn birthdays_page(ui: &Ui) {
     add.connect_clicked(move |_| add_to_calendar(&u));
     ui.page_actions.append(&add);
     if upcoming.is_empty() {
-        let (empty, _) =
-            empty_block("nyx-contacts-cake-symbolic", "No birthdays yet", "Add a birthday to someone's details and it shows here.");
+        let (empty, _) = empty_block(
+            "nyx-contacts-cake-symbolic",
+            "No birthdays yet",
+            "Add a birthday to someone's details and it shows here.",
+        );
         ui.page_body.append(&empty);
         return;
     }
@@ -2594,7 +2618,11 @@ fn duplicates_page(ui: &Ui) {
         let l = gtk::CheckButton::with_label(&none(left));
         let r = gtk::CheckButton::with_label(&none(right));
         r.set_group(Some(&l));
-        if left.is_empty() { r.set_active(true) } else { l.set_active(true) }
+        if left.is_empty() {
+            r.set_active(true)
+        } else {
+            l.set_active(true)
+        }
         for (side, empty) in [(&l, left.is_empty()), (&r, right.is_empty())] {
             side.add_css_class("pick");
             if empty {
@@ -2607,14 +2635,23 @@ fn duplicates_page(ui: &Ui) {
         row += 1;
     };
     let full_name = |c: &Contact| {
-        [c.prefix.as_str(), &c.first, &c.middle, &c.last, &c.suffix].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
+        [c.prefix.as_str(), &c.first, &c.middle, &c.last, &c.suffix]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     let (na, nb) = (full_name(&a), full_name(&b));
     if na != nb || a.display != b.display {
         choose("Name", Pick::Name, &a.name(false), &b.name(false));
     }
     if a.photo != b.photo && (!a.photo.is_empty() || !b.photo.is_empty()) {
-        choose("Photo", Pick::Photo, if a.photo.is_empty() { "" } else { "Their photo" }, if b.photo.is_empty() { "" } else { "Their photo" });
+        choose(
+            "Photo",
+            Pick::Photo,
+            if a.photo.is_empty() { "" } else { "Their photo" },
+            if b.photo.is_empty() { "" } else { "Their photo" },
+        );
     }
     let sa = editor::singles(&a);
     let sb = editor::singles(&b);
@@ -2631,7 +2668,8 @@ fn duplicates_page(ui: &Ui) {
         }
         cell(&grid, 0, row, &key(title), "");
         let side = |v: &[String]| {
-            let l = label(&if v.is_empty() { "None".to_string() } else { v.join("\n") }, if v.is_empty() { "dup-none" } else { "" });
+            let l =
+                label(&if v.is_empty() { "None".to_string() } else { v.join("\n") }, if v.is_empty() { "dup-none" } else { "" });
             l.set_hexpand(true);
             l.upcast::<gtk::Widget>()
         };
@@ -2644,21 +2682,37 @@ fn duplicates_page(ui: &Ui) {
     };
     let values = |f: &[model::Field]| f.iter().map(|f| f.value.clone()).collect::<Vec<_>>();
     let same_phone = why == "phone number";
-    let phone_note = if same_phone { "same number · kept once" } else if !a.phones.is_empty() && !b.phones.is_empty() { "both kept" } else { "kept" };
+    let phone_note = if same_phone {
+        "same number · kept once"
+    } else if !a.phones.is_empty() && !b.phones.is_empty() {
+        "both kept"
+    } else {
+        "kept"
+    };
     keep("Phone", values(&a.phones), values(&b.phones), phone_note);
-    let email_note = if why == "email" { "same email · kept once" } else if !a.emails.is_empty() && !b.emails.is_empty() { "both kept" } else { "kept" };
+    let email_note = if why == "email" {
+        "same email · kept once"
+    } else if !a.emails.is_empty() && !b.emails.is_empty() {
+        "both kept"
+    } else {
+        "kept"
+    };
     keep("Email", values(&a.emails), values(&b.emails), email_note);
-    let addr = |c: &Contact| c.addresses.iter().map(|f| model::Address::parse(&f.value).display().replace('\n', ", ")).collect::<Vec<_>>();
+    let addr = |c: &Contact| {
+        c.addresses.iter().map(|f| model::Address::parse(&f.value).display().replace('\n', ", ")).collect::<Vec<_>>()
+    };
     keep("Address", addr(&a), addr(&b), "kept");
     keep("Website", values(&a.websites), values(&b.websites), "kept");
-    let note = |c: &Contact| if c.notes.trim().is_empty() { vec![] } else { vec![c.notes.lines().next().unwrap_or("").to_string()] };
+    let note =
+        |c: &Contact| if c.notes.trim().is_empty() { vec![] } else { vec![c.notes.lines().next().unwrap_or("").to_string()] };
     keep("Notes", note(&a), note(&b), "kept");
     let lists = |c: &Contact| {
         ui.book.borrow().lists.iter().filter(|l| l.members.contains(&c.id)).map(|l| l.name.clone()).collect::<Vec<_>>()
     };
     keep("Lists", lists(&a), lists(&b), "kept");
     body.append(&grid);
-    let foot = label("Values that differ are yours to choose; every email, phone and list is kept. Merge can be undone.", "dup-foot");
+    let foot =
+        label("Values that differ are yours to choose; every email, phone and list is kept. Merge can be undone.", "dup-foot");
     foot.set_selectable(false);
     body.append(&foot);
 
@@ -3004,9 +3058,15 @@ pub fn rename_source(ui: &Ui, uid: &str, done: impl Fn(String) + 'static) {
     };
     let set = Rc::new(set);
     let s = set.clone();
-    let extra = w::ask_text("Rename source", "The name Contacts shows for it. The account keeps its own.", book.label(), "Rename", move |name| {
-        s(Some(name));
-    });
+    let extra = w::ask_text(
+        "Rename source",
+        "The name Contacts shows for it. The account keeps its own.",
+        book.label(),
+        "Rename",
+        move |name| {
+            s(Some(name));
+        },
+    );
     if let Some(own) = own.filter(|o| !o.is_empty()) {
         let reset = gtk::Button::with_label(&format!("Use “{own}”"));
         reset.add_css_class("flat");
@@ -3073,18 +3133,19 @@ fn remove_book(uid: &str) -> anyhow::Result<()> {
     let mut db = rusqlite::Connection::open(base.join("nyx-pim-preview/pim.sqlite3"))?;
     db.busy_timeout(std::time::Duration::from_secs(5))?;
     let tx = db.transaction()?;
-    let account: Option<Option<String>> = tx
-        .query_row("SELECT account FROM books WHERE uid=?1", [uid], |r| r.get(0))
-        .map(Some)
-        .or_else(|e| if e == rusqlite::Error::QueryReturnedNoRows { Ok(None) } else { Err(e) })?;
+    let account: Option<Option<String>> =
+        tx.query_row("SELECT account FROM books WHERE uid=?1", [uid], |r| r.get(0))
+            .map(Some)
+            .or_else(|e| if e == rusqlite::Error::QueryReturnedNoRows { Ok(None) } else { Err(e) })?;
     match account {
         None => anyhow::bail!("That address book is gone already"),
         Some(Some(_)) => anyhow::bail!("That address book belongs to an account; remove the account in Settings instead"),
         Some(None) => {}
     }
     for table in ["contacts", "contact_resources", "contact_baselines", "contact_remote_versions", "contact_history"] {
-        let exists: bool =
-            tx.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |r| r.get::<_, i64>(0))? > 0;
+        let exists: bool = tx
+            .query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |r| r.get::<_, i64>(0))?
+            > 0;
         if exists {
             tx.execute(&format!("DELETE FROM {table} WHERE book=?1"), [uid])?;
         }
@@ -3149,11 +3210,7 @@ fn delete_people(ui: &Ui) {
         }
     }
     let who = if chosen.len() == 1 { chosen[0].contact.name(false) } else { format!("{} people", chosen.len()) };
-    let detail = format!(
-        "Every copy in {} goes.{}",
-        places.join(", "),
-        if kept { " Read-only books keep theirs." } else { "" }
-    );
+    let detail = format!("Every copy in {} goes.{}", places.join(", "), if kept { " Read-only books keep theirs." } else { "" });
     let prompt = gtk::AlertDialog::builder()
         .message(format!("Delete {who}?"))
         .detail(detail)

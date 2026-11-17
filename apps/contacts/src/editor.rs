@@ -304,9 +304,8 @@ fn birthday_picker(value: Rc<RefCell<String>>) -> (gtk::MenuButton, Rc<dyn Fn()>
     let col = w::vbox(8);
     let calendar = gtk::Calendar::new();
     let today = glib::DateTime::now_local().ok();
-    let (m, d) = model::birthday_md(&value.borrow()).unwrap_or_else(|| {
-        today.as_ref().map(|t| (t.month() as u32, t.day_of_month() as u32)).unwrap_or((1, 1))
-    });
+    let (m, d) = model::birthday_md(&value.borrow())
+        .unwrap_or_else(|| today.as_ref().map(|t| (t.month() as u32, t.day_of_month() as u32)).unwrap_or((1, 1)));
     let year = value.borrow().get(..4).filter(|_| !value.borrow().starts_with("--")).and_then(|y| y.parse::<i32>().ok());
     if let Ok(dt) = glib::DateTime::from_local(year.unwrap_or(1990), m as i32, d as i32, 0, 0, 0.0) {
         calendar.select_day(&dt);

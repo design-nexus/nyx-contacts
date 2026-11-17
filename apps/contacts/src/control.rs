@@ -6,7 +6,7 @@
 use crate::model::{self, Address, Contact, Field};
 use crate::ui;
 use nyx_core::control::text;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Most emails or phones one call may add.
 const MAX_VALUES: usize = 20;
@@ -17,6 +17,50 @@ pub fn find_headless(query: &str) -> anyhow::Result<Value> {
     let book = model::Store::read(&nyx_core::paths::data_dir().join("contacts.db"))?.unwrap_or_default();
     let found: Vec<Value> = book.contacts.iter().filter(|c| c.matches(query)).take(10).map(card).collect();
     Ok(json!({"contacts": found, "untrusted_content": true}))
+}
+
+/// The read-only actions, from the window's book or the one on disk.
+fn look(name: &str, args: Value) -> Result<Value, String> {
+    let book = book_now()?;
+    match name {
+        "contacts.find" => {
+            let q = text(&args, "query")?;
+            let found: Vec<Value> = book.contacts.iter().filter(|c| c.matches(&q)).take(10).map(card).collect();
+            Ok(json!({"contacts": found, "untrusted_content": true}))
+        }
+        "contacts.birthdays" => {
+            let days = args["days"].as_i64().unwrap_or(30).clamp(0, 366);
+            let found: Vec<Value> = upcoming(&book, days)
+                .into_iter()
+                .map(|(n, c)| json!({"id": c.id, "name": c.name(false), "birthday": c.birthday, "in_days": n}))
+                .collect();
+            Ok(json!({"birthdays": found, "untrusted_content": true}))
+        }
+        _ => {
+            let lists: Vec<Value> = book.lists.iter().map(|l| json!({"name": l.name, "people": l.members.len()})).collect();
+            Ok(json!({"lists": lists, "untrusted_content": true}))
+        }
+    }
+}
+
+/// Contacts' description for the control interface (API 2): its actions, the `nyx`
+/// command's `contacts` namespace, and D-Bus activation so a call starts it.
+pub fn description(app_id: &str) -> Value {
+    let risk = |name: &str| match name {
+        "contacts.find" | "contacts.birthdays" | "contacts.lists" => "read_only",
+        _ => "writes",
+    };
+    let mut tools = tools();
+    for t in tools.as_array_mut().into_iter().flatten() {
+        let r = risk(t["name"].as_str().unwrap_or_default());
+        t["x-nyx"] = json!({"risk": r});
+    }
+    tools[0]["x-nyx"]["positional"] = json!(["query"]);
+    json!({
+        "tools": tools,
+        "nyx": {"api": 2, "app": app_id, "name": "Contacts", "icon": "io.github.design_nexus.nyx.Contacts", "namespaces": ["contacts"],
+                "aliases": ["people"], "bus_name": app_id, "activation": "dbus", "default": "contacts.find"}
+    })
 }
 
 pub fn tools() -> Value {
@@ -33,11 +77,8 @@ pub fn tools() -> Value {
 
 pub fn card(c: &Contact) -> Value {
     let values = |f: &[Field]| f.iter().map(|x| json!({"label": x.label, "value": x.value})).collect::<Vec<_>>();
-    let addresses: Vec<Value> = c
-        .addresses
-        .iter()
-        .map(|a| json!({"label": a.label, "value": Address::parse(&a.value).display()}))
-        .collect();
+    let addresses: Vec<Value> =
+        c.addresses.iter().map(|a| json!({"label": a.label, "value": Address::parse(&a.value).display()})).collect();
     json!({
         "id": c.id, "name": c.name(false), "company": c.company, "title": c.title, "birthday": c.birthday,
         "emails": values(&c.emails), "phones": values(&c.phones), "addresses": addresses,
@@ -130,8 +171,33 @@ pub fn upcoming(book: &model::Book, days: i64) -> Vec<(i64, Contact)> {
     out
 }
 
+/// The address book: the open window's, else read from disk (a call that started
+/// Contacts without a window only looks).
+fn book_now() -> Result<model::Book, String> {
+    match ui::current() {
+        Some(ui) => Ok(ui.book.borrow().clone()),
+        None => model::Store::read(&nyx_core::paths::data_dir().join("contacts.db"))
+            .map(Option::unwrap_or_default)
+            .map_err(|e| format!("{e:#}")),
+    }
+}
+
+/// The window, opened for a change when Contacts was started only to answer a call.
+fn ui_or_open() -> Result<ui::Ui, String> {
+    if let Some(ui) = ui::current() {
+        return Ok(ui);
+    }
+    use gtk::prelude::*;
+    let app = gtk::gio::Application::default().and_downcast::<gtk::Application>().ok_or("Contacts isn't ready")?;
+    ui::present(&app, None).map_err(|e| format!("{e:#}"))
+}
+
 pub fn handle(name: &str, args: Value) -> Result<Value, String> {
-    let ui = ui::current().ok_or("Contacts isn't ready")?;
+    match name {
+        "contacts.find" | "contacts.birthdays" | "contacts.lists" => return look(name, args),
+        _ => {}
+    }
+    let ui = ui_or_open()?;
     match name {
         "contacts.find" => {
             let q = text(&args, "query")?;
@@ -207,7 +273,9 @@ pub fn handle(name: &str, args: Value) -> Result<Value, String> {
             let bday = birthday(&args)?;
             let c = book.contacts.iter_mut().find(|c| c.id == id).ok_or("no contact with that id")?;
             let mut renamed = false;
-            for (key, slot) in [("first", &mut c.first), ("last", &mut c.last), ("company", &mut c.company), ("title", &mut c.title)] {
+            for (key, slot) in
+                [("first", &mut c.first), ("last", &mut c.last), ("company", &mut c.company), ("title", &mut c.title)]
+            {
                 // Change, never clear.
                 if let Some(v) = short(&args, key)?.filter(|v| !v.is_empty()) {
                     renamed |= matches!(key, "first" | "last") && *slot != v;

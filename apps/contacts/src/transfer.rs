@@ -17,9 +17,10 @@ pub fn choose_import(ui: &Ui) {
     let u = ui.clone();
     picker.open(Some(&ui.window), None::<&gio::Cancellable>, move |result| {
         if let Ok(file) = result
-            && let Some(path) = file.path() {
-                import_path(&u, &path);
-            }
+            && let Some(path) = file.path()
+        {
+            import_path(&u, &path);
+        }
     });
 }
 pub fn import_path(ui: &Ui, path: &Path) {
@@ -85,7 +86,8 @@ fn existing<'a>(book: &'a model::Book, c: &model::Contact) -> Option<&'a model::
 
 /// What an imported card adds to the contact it updates.
 fn what_changes(old: &model::Contact, new: &model::Contact) -> String {
-    let adds = |a: &[model::Field], b: &[model::Field]| b.iter().any(|f| !a.iter().any(|o| o.value.eq_ignore_ascii_case(&f.value)));
+    let adds =
+        |a: &[model::Field], b: &[model::Field]| b.iter().any(|f| !a.iter().any(|o| o.value.eq_ignore_ascii_case(&f.value)));
     let mut parts = vec![];
     if adds(&old.emails, &new.emails) {
         parts.push("adds an email");
@@ -102,11 +104,7 @@ fn what_changes(old: &model::Contact, new: &model::Contact) -> String {
     if !new.company.is_empty() && new.company != old.company {
         parts.push("new company");
     }
-    if parts.is_empty() {
-        "no new details".into()
-    } else {
-        parts.join(", ")
-    }
+    if parts.is_empty() { "no new details".into() } else { parts.join(", ") }
 }
 
 fn preview(ui: &Ui, import: Import, source: &str) {
@@ -193,13 +191,7 @@ fn preview(ui: &Ui, import: Import, source: &str) {
                 }
                 check.set_active(twin.is_none());
                 let r = row.clone();
-                check.connect_toggled(move |c| {
-                    if c.is_active() {
-                        r.remove_css_class("off")
-                    } else {
-                        r.add_css_class("off")
-                    }
-                });
+                check.connect_toggled(move |c| if c.is_active() { r.remove_css_class("off") } else { r.add_css_class("off") });
                 if twin.is_some() {
                     row.add_css_class("off");
                 }
@@ -309,11 +301,12 @@ fn save_export(ui: &Ui, contacts: Vec<model::Contact>, csv: bool) {
     let u = ui.clone();
     picker.save(Some(&ui.window), None::<&gio::Cancellable>, move |result| {
         if let Ok(file) = result
-            && let Some(path) = file.path() {
-                match nyx_core::cmd::atomic_write(&path, &*bytes) {
-                    Ok(()) => ui::toast(&u, &format!("Exported {} contacts.", contacts.len())),
-                    Err(e) => ui::toast(&u, &format!("Could not export: {e}")),
-                }
+            && let Some(path) = file.path()
+        {
+            match nyx_core::cmd::atomic_write(&path, &*bytes) {
+                Ok(()) => ui::toast(&u, &format!("Exported {} contacts.", contacts.len())),
+                Err(e) => ui::toast(&u, &format!("Could not export: {e}")),
             }
+        }
     });
 }

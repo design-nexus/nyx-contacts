@@ -104,11 +104,14 @@ impl Address {
 
     /// For reading: street, then "City, Region Postal", then country, one per line.
     pub fn display(&self) -> String {
-        let locality = [self.city.as_str(), &[self.region.as_str(), &self.postal].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" ")]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let locality = [
+            self.city.as_str(),
+            &[self.region.as_str(), &self.postal].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" "),
+        ]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ");
         [self.po_box.as_str(), &self.extended, &self.street, &locality, &self.country]
             .into_iter()
             .filter(|s| !s.trim().is_empty())
@@ -275,7 +278,11 @@ impl Store {
     pub fn load(&mut self) -> Result<Book> {
         let mut book = Book::default();
         let mut saved = HashMap::new();
-        for row in self.db.prepare("SELECT id, data FROM contacts ORDER BY rowid")?.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        for row in self
+            .db
+            .prepare("SELECT id, data FROM contacts ORDER BY rowid")?
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        {
             let (id, data) = row?;
             book.contacts
                 .push(serde_json::from_str(&data).context("Couldn't read a contact; the database has been kept unchanged")?);
@@ -350,10 +357,7 @@ pub fn shared(a: &Contact, b: &Contact) -> Option<&'static str> {
     (!mails(a).is_disjoint(&mails(b))).then_some("email")
 }
 pub fn duplicates(a: &Contact, b: &Contact) -> bool {
-    a.emails
-        .iter()
-        .filter_map(|x| email_key(&x.value))
-        .any(|x| b.emails.iter().any(|y| email_key(&y.value).as_ref() == Some(&x)))
+    a.emails.iter().filter_map(|x| email_key(&x.value)).any(|x| b.emails.iter().any(|y| email_key(&y.value).as_ref() == Some(&x)))
         || a.phones
             .iter()
             .filter_map(|x| phone_key(&x.value))
@@ -531,7 +535,8 @@ mod tests {
     #[test]
     fn saves_only_changes_and_reads_old_photos() -> Result<()> {
         let mut store = Store::open(Path::new(":memory:"))?;
-        let mut book = Book { contacts: vec![Contact { first: "Ada".into(), photo: vec![1, 2, 3], ..Default::default() }], lists: vec![] };
+        let mut book =
+            Book { contacts: vec![Contact { first: "Ada".into(), photo: vec![1, 2, 3], ..Default::default() }], lists: vec![] };
         store.save(&book)?;
         book.contacts.push(Contact { first: "Bea".into(), ..Default::default() });
         book.contacts.remove(0);
@@ -580,7 +585,8 @@ mod tests {
             phones: if phone.is_empty() { vec![] } else { vec![Field { label: "cell".into(), value: phone.into() }] },
             ..Default::default()
         };
-        let book = vec![c("A", "a@x.org", ""), c("B", "A@X.org ", "+1 555-123-4567"), c("C", "", "555 123 4567"), c("D", "d@x.org", "")];
+        let book =
+            vec![c("A", "a@x.org", ""), c("B", "A@X.org ", "+1 555-123-4567"), c("C", "", "555 123 4567"), c("D", "d@x.org", "")];
         let idx = DupIndex::new(&book);
         assert_eq!(idx.flagged().len(), 3);
         let groups = idx.groups();

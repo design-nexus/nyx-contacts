@@ -151,7 +151,9 @@ pub fn vcard_read(text: &str) -> Import {
         let mut key_parts = key.split(';');
         let property = key_parts.next().unwrap().rsplit('.').next().unwrap().to_uppercase();
         let params: Vec<_> = key_parts.collect();
-        let qp = params.iter().any(|p| p.eq_ignore_ascii_case("ENCODING=QUOTED-PRINTABLE") || p.eq_ignore_ascii_case("QUOTED-PRINTABLE"));
+        let qp = params
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("ENCODING=QUOTED-PRINTABLE") || p.eq_ignore_ascii_case("QUOTED-PRINTABLE"));
         let decoded = if qp { quoted_printable(raw_value) } else { raw_value.to_string() };
         let value = decoded.as_str();
         let field = Field { label: label_of(&params), value: unesc(value) };
@@ -376,14 +378,16 @@ pub fn csv_contacts(data: &CsvData, map: &[Option<usize>]) -> Import {
                 Some(8) => c.notes = value.clone(),
                 Some(9..=11) => c.emails.push(Field { label: "other".into(), value: value.clone() }),
                 // Several numbers in one column are written "; "-separated.
-                Some(12..=14) => c.phones.extend(value.split("; ").map(str::trim).filter(|v| !v.is_empty()).map(|v| Field {
-                    label: match column {
-                        Some(12) => "cell",
-                        Some(13) => "home",
-                        _ => "work",
+                Some(12..=14) => c.phones.extend(value.split("; ").map(str::trim).filter(|v| !v.is_empty()).map(|v| {
+                    Field {
+                        label: match column {
+                            Some(12) => "cell",
+                            Some(13) => "home",
+                            _ => "work",
+                        }
+                        .into(),
+                        value: v.to_string(),
                     }
-                    .into(),
-                    value: v.to_string(),
                 })),
                 // One address per line; each is kept as free-form street text.
                 Some(15..=16) => c.addresses.extend(value.lines().map(str::trim).filter(|v| !v.is_empty()).map(|v| Field {

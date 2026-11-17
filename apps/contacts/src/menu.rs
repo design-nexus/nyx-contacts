@@ -14,23 +14,51 @@ pub enum Entry {
         run: Box<dyn Fn()>,
     },
     /// Opens a page of its own (Add to list, Colour), with a way back.
-    Sub { label: String, icon: Option<&'static str>, entries: Vec<Entry> },
+    Sub {
+        label: String,
+        icon: Option<&'static str>,
+        entries: Vec<Entry>,
+    },
     /// A dim line under the item before it.
     Note(String),
     Separator,
 }
 
 pub fn item(icon: &'static str, label: &str, run: impl Fn() + 'static) -> Entry {
-    Entry::Item { label: label.into(), icon: Some(icon), swatch: None, key: None, danger: false, enabled: true, run: Box::new(run) }
+    Entry::Item {
+        label: label.into(),
+        icon: Some(icon),
+        swatch: None,
+        key: None,
+        danger: false,
+        enabled: true,
+        run: Box::new(run),
+    }
 }
 
 pub fn danger(icon: &'static str, label: &str, run: impl Fn() + 'static) -> Entry {
-    Entry::Item { label: label.into(), icon: Some(icon), swatch: None, key: None, danger: true, enabled: true, run: Box::new(run) }
+    Entry::Item {
+        label: label.into(),
+        icon: Some(icon),
+        swatch: None,
+        key: None,
+        danger: true,
+        enabled: true,
+        run: Box::new(run),
+    }
 }
 
 /// A colour to pick, shown as its dot.
 pub fn swatch(index: usize, label: &str, run: impl Fn() + 'static) -> Entry {
-    Entry::Item { label: label.into(), icon: None, swatch: Some(index), key: None, danger: false, enabled: true, run: Box::new(run) }
+    Entry::Item {
+        label: label.into(),
+        icon: None,
+        swatch: Some(index),
+        key: None,
+        danger: false,
+        enabled: true,
+        run: Box::new(run),
+    }
 }
 
 pub fn sub(icon: &'static str, label: &str, entries: Vec<Entry>) -> Entry {

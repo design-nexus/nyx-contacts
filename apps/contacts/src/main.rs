@@ -1,10 +1,10 @@
-mod dialog_dismissal;
 mod control;
-mod online_check;
+mod dialog_dismissal;
 mod editor;
 mod formats;
 mod menu;
 mod model;
+mod online_check;
 mod people;
 mod prefs;
 mod theme;
@@ -13,26 +13,45 @@ mod ui;
 use gtk::{gio, glib, prelude::*};
 const APP_ID: &str = "io.github.design_nexus.nyx.Contacts";
 fn main() -> glib::ExitCode {
+    nyx_core::control::describe_if_asked(&control::description(
+        &std::env::var("NYX_CONTACTS_APP_ID").unwrap_or_else(|_| APP_ID.to_string()),
+    ));
     nyx_core::app::init(nyx_core::app::App { slug: "nyx-contacts", name: "Contacts" });
     let args: Vec<_> = std::env::args().collect();
     if args.iter().any(|s| s == "--help" || s == "-h") {
-        println!("Usage: nyx-contacts [--section all|favorites|birthdays|duplicates|settings] [--toggle] [FILE.vcf|FILE.csv …]\n       nyx-contacts --find QUERY   (matching contacts as JSON, no window)\n       nyx-contacts --sync-online  (synchronize enabled accounts, no window)");
+        println!(
+            "Usage: nyx-contacts [--section all|favorites|birthdays|duplicates|settings] [--toggle] [FILE.vcf|FILE.csv …]\n       nyx-contacts --find QUERY   (matching contacts as JSON, no window)\n       nyx-contacts --sync-online  (synchronize enabled accounts, no window)"
+        );
         return glib::ExitCode::SUCCESS;
     }
     if let Some(i) = args.iter().position(|s| s == "--check-online") {
-        let cleanup = if args.get(i+1).is_some_and(|s|s=="cleanup") {
-            let Some(uid)=args.get(i+2) else { eprintln!("A diagnostic contact ID is required"); return glib::ExitCode::FAILURE; };
+        let cleanup = if args.get(i + 1).is_some_and(|s| s == "cleanup") {
+            let Some(uid) = args.get(i + 2) else {
+                eprintln!("A diagnostic contact ID is required");
+                return glib::ExitCode::FAILURE;
+            };
             Some(uid.as_str())
-        } else { None };
+        } else {
+            None
+        };
         return match online_check::run(cleanup) {
             Ok(()) => glib::ExitCode::SUCCESS,
-            Err(error) => { eprintln!("Contacts online check: {error:#}"); glib::ExitCode::FAILURE }
+            Err(error) => {
+                eprintln!("Contacts online check: {error:#}");
+                glib::ExitCode::FAILURE
+            }
         };
     }
     if args.iter().any(|s| s == "--sync-online") {
         return match nyx_pim::Registry::connect().and_then(|r| r.refresh_accounts(nyx_accounts_native::Service::Contacts)) {
-            Ok(()) => { println!("Contacts synchronization completed"); glib::ExitCode::SUCCESS }
-            Err(error) => { eprintln!("Contacts synchronization: {error}"); glib::ExitCode::FAILURE }
+            Ok(()) => {
+                println!("Contacts synchronization completed");
+                glib::ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("Contacts synchronization: {error}");
+                glib::ExitCode::FAILURE
+            }
         };
     }
     if let Some(i) = args.iter().position(|s| s == "--find") {
@@ -53,19 +72,28 @@ fn main() -> glib::ExitCode {
             std::env::set_var("GSK_RENDERER", "gl");
         }
     }
-    let app = gtk::Application::builder()
-        .application_id(std::env::var("NYX_CONTACTS_APP_ID").unwrap_or_else(|_| APP_ID.to_string()))
-        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
-        .build();
-    // Nyx Assistant looks people up and adds them through this (primary instance only).
-    app.connect_startup(|app| nyx_core::control::serve(app, control::tools(), control::handle));
+    // Started by D-Bus for an action (no window): GLib leaves this flag to apps that
+    // handle their own command line.
+    let mut argv: Vec<String> = std::env::args().collect();
+    let service = argv.iter().any(|a| a == "--gapplication-service");
+    argv.retain(|a| a != "--gapplication-service");
+    let mut flags = gio::ApplicationFlags::HANDLES_COMMAND_LINE;
+    if service {
+        flags |= gio::ApplicationFlags::IS_SERVICE;
+    }
+    let id = std::env::var("NYX_CONTACTS_APP_ID").unwrap_or_else(|_| APP_ID.to_string());
+    let app = gtk::Application::builder().application_id(&id).flags(flags).build();
+    // The nyx command, Glimpse and Nyx Assistant look people up and add them through this
+    // (primary instance only).
+    app.connect_startup(move |app| nyx_core::control::serve(app, control::description(&id), control::handle));
     app.connect_command_line(|app, cl| {
         let argv: Vec<_> = cl.arguments().iter().map(|s| s.to_string_lossy().into_owned()).collect();
         if argv.iter().any(|s| s == "--toggle")
-            && let Some(w) = app.active_window() {
-                w.close();
-                return glib::ExitCode::SUCCESS;
-            }
+            && let Some(w) = app.active_window()
+        {
+            w.close();
+            return glib::ExitCode::SUCCESS;
+        }
         let section = argv.iter().position(|s| s == "--section").and_then(|i| argv.get(i + 1));
         let ui = match ui::present(app, section.map(String::as_str)) {
             Ok(ui) => ui,
@@ -100,5 +128,5 @@ fn main() -> glib::ExitCode {
         glib::ExitCode::SUCCESS
     });
     app.connect_shutdown(|_| prefs::flush());
-    app.run()
+    app.run_with_args(&argv)
 }

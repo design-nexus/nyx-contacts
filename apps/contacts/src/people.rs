@@ -28,13 +28,8 @@ impl Person {
 
 /// What makes two cards the same person.
 fn keys(c: &Contact) -> Vec<String> {
-    let mut keys: Vec<String> = c
-        .emails
-        .iter()
-        .map(|f| f.value.trim().to_lowercase())
-        .filter(|e| !e.is_empty())
-        .map(|e| format!("e:{e}"))
-        .collect();
+    let mut keys: Vec<String> =
+        c.emails.iter().map(|f| f.value.trim().to_lowercase()).filter(|e| !e.is_empty()).map(|e| format!("e:{e}")).collect();
     keys.extend(c.phones.iter().filter_map(|f| model::phone_key(&f.value)).map(|p| format!("p:{p}")));
     // The name: a full one (two words or more) always, a single word only when there's
     // nothing else to go on. An email written as the name isn't one.

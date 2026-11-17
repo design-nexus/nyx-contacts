@@ -6,6 +6,8 @@ Accounts can be read alongside it.
 
 ## Install
 
+On NyxOS, choose Contacts in Welcome when you set up, or install it later from the Store or with `nyx install nyx-contacts`. On Omarchy:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/design-nexus/nyx-contacts/main/install.sh | bash -s -- contacts
 ```
